@@ -145,7 +145,11 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
 
     # «Голодные игры»: выстрелов мало, флот никто не топит, считаются попадания. Прячем корабли от
     # первых выстрелов этого соперника, а если его не знаем — от первых выстрелов всех ботов в среднем.
-    if modifier == "HUNGER_GAMES":
+    # BATTLESHIPS_EVASIVE=1: прятать флот от первых выстрелов соперника во всех режимах, где флот
+    # ставим мы (кроме «Спидрана»). 10.10 в «Птичьем коробе» «Твоя бабушка» почти не стреляла по
+    # краям (1 выстрел из 20) и попадала по нашему флоту внутри поля 9,4 раза из 20.
+    evasive_everywhere = os.environ.get("BATTLESHIPS_EVASIVE") == "1" and modifier != "SPEEDRUN"
+    if modifier == "HUNGER_GAMES" or evasive_everywhere:
         early, origin = typical_early, "ботов в среднем"
         for section, minimum, label in (("recentVsUs", MIN_RECENT_VS_US, "соперника в партиях с нами"),
                                         ("recent", MIN_PLACEMENTS, "соперника в последних партиях")):
