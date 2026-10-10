@@ -1,0 +1,59 @@
+"""Геометрия поля на битовых масках: клетка (row, column) — бит row * columns + column."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from .rules import Cell
+
+
+@lru_cache(maxsize=None)
+def neighbour_masks(rows: int, columns: int) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Для каждой клетки: маска соседей по стороне и маска соседей по диагонали."""
+    side, diagonal = [], []
+    for row in range(rows):
+        for column in range(columns):
+            masks = [0, 0]
+            for d_row in (-1, 0, 1):
+                for d_column in (-1, 0, 1):
+                    r, c = row + d_row, column + d_column
+                    if (d_row or d_column) and 0 <= r < rows and 0 <= c < columns:
+                        masks[d_row != 0 and d_column != 0] |= 1 << (r * columns + c)
+            side.append(masks[0])
+            diagonal.append(masks[1])
+    return tuple(side), tuple(diagonal)
+
+
+def ring(mask: int, rows: int, columns: int) -> int:
+    """Клетки, касающиеся маски стороной или углом, без самой маски."""
+    side, diagonal = neighbour_masks(rows, columns)
+    result = 0
+    for index in bits(mask):
+        result |= side[index] | diagonal[index]
+    return result & ~mask
+
+
+@lru_cache(maxsize=None)
+def placements(rows: int, columns: int, length: int) -> tuple[tuple[int, int, tuple[int, ...]], ...]:
+    """Все положения корабля данной длины: (маска, маска кольца вокруг, индексы клеток)."""
+    result = []
+    directions = ((0, 1),) if length == 1 else ((0, 1), (1, 0))
+    for d_row, d_column in directions:
+        for row in range(rows - d_row * (length - 1)):
+            for column in range(columns - d_column * (length - 1)):
+                cells = tuple((row + d_row * k) * columns + column + d_column * k for k in range(length))
+                mask = sum(1 << index for index in cells)
+                result.append((mask, ring(mask, rows, columns), cells))
+    return tuple(result)
+
+
+def bits(mask: int):
+    """Индексы единичных битов маски по возрастанию."""
+    while mask:
+        low = mask & -mask
+        yield low.bit_length() - 1
+        mask ^= low
+
+
+def to_cell(index: int, columns: int) -> Cell:
+    return divmod(index, columns)
