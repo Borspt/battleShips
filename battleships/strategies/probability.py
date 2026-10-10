@@ -42,7 +42,8 @@ HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
 class ProbabilityStrategy(Strategy):
     def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0,
                  spread: float = 0.0, sunk_checks: bool = False, endgame_ships: int = ENDGAME_SHIPS,
-                 cell_prior: tuple[float, ...] | None = None, single_prior: tuple[float, ...] | None = None, single_per_quadrant: bool = False, **kwargs):
+                 cell_prior: tuple[float, ...] | None = None, single_prior: tuple[float, ...] | None = None, single_per_quadrant: bool = False,
+                 placement_prior: dict[int, tuple[float, ...]] | None = None, **kwargs):
         super().__init__(rules, rng, **kwargs)
         # «Шрёдингер»: тратить ли DISTANCE на вопрос «потоплен ли корабль» по подбитой клетке.
         self.sunk_checks = sunk_checks
@@ -59,6 +60,8 @@ class ProbabilityStrategy(Strategy):
         self.single_prior = single_prior  # вес каждой клетки поля для однопалубных; сильнее поправки на края
         # «Спидран»: платформа ставит ровно по одному однопалубному в каждую четверть поля.
         self.single_per_quadrant = single_per_quadrant
+        # Вес каждого положения длинного корабля (порядок как в placements()); сильнее остальных поправок.
+        self.placement_prior = placement_prior or {}
         self._cell_priors: dict[int, list[float]] = {}
         self.size = rules.rows * rules.columns
         self.side, self.diagonal = neighbour_masks(rules.rows, rules.columns)
@@ -298,6 +301,9 @@ class ProbabilityStrategy(Strategy):
             if self.single_per_quadrant:
                 return self._quadrant_priors()
             return [self.single_prior[cells[0]] for _, _, cells in placements(self.rules.rows, self.rules.columns, 1)]
+        learned = self.placement_prior.get(length) if length > 1 else None
+        if learned is not None and len(learned) == len(placements(self.rules.rows, self.rules.columns, length)):
+            return learned
         if self.cell_prior is not None and len(self.cell_prior) == self.size:
             if length not in self._cell_priors:
                 self._cell_priors[length] = [math.prod(self.cell_prior[index] for index in cells)

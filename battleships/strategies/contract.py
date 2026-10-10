@@ -20,6 +20,29 @@ from .adaptation import Plan, ProfileBook, choose_plan
 from .probability import ProbabilityStrategy
 
 
+SPEEDRUN_PRIOR_FILE = Path("scouting/speedrun_prior.json")
+_speedrun_prior: dict[int, tuple[float, ...]] | None = None
+
+
+def speedrun_prior(rules: model.Rules) -> dict[int, tuple[float, ...]] | None:
+    """Выученные положения длинных кораблей платформы; только в «Спидране» на поле 10 × 10.
+
+    Включается переменной BATTLESHIPS_SPEEDRUN_PRIOR=1 (10.10 с 23:40 — проба на «Хаки»): на 300 отложенных
+    флотах 44,84 выстрела против 45,17, в очной игре с прежней версией 145 побед, 115 поражений, 40 ничьих.
+    """
+    global _speedrun_prior
+    if (rules.modifier != "SPEEDRUN" or (rules.rows, rules.columns) != (10, 10)
+            or os.environ.get("BATTLESHIPS_SPEEDRUN_PRIOR") != "1"):
+        return None
+    if _speedrun_prior is None:
+        try:
+            table = json.loads(SPEEDRUN_PRIOR_FILE.read_text(encoding="utf-8"))
+            _speedrun_prior = {int(length): tuple(table[length]) for length in ("2", "3", "4")}
+        except (OSError, ValueError, KeyError, TypeError):
+            _speedrun_prior = {}
+    return _speedrun_prior or None
+
+
 def core_rules(rules: model.Rules) -> Rules:
     return Rules(
         rows=rules.rows,
@@ -74,7 +97,8 @@ class ProbabilityBot:
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
                                       spread=self._spread(state), sunk_checks=True, cell_prior=plan.cell_prior,
                                       single_prior=plan.single_prior,
-                                      single_per_quadrant=plan.single_per_quadrant)
+                                      single_per_quadrant=plan.single_per_quadrant,
+                                      placement_prior=speedrun_prior(state.rules))
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
