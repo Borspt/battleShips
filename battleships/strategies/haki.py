@@ -11,6 +11,7 @@ from ..placement import random_placement
 from .adaptation import Plan, choose_plan
 from .contract import ProbabilityBot, core_rules
 from .probability import ProbabilityStrategy
+from .haki_memory import HakiBook
 
 
 class _SearchLimit(Exception):
@@ -42,6 +43,58 @@ class HakiEndgameStrategy(ProbabilityStrategy):
     def __init__(self, *args, search_ms=40.0, **kwargs):
         super().__init__(*args, **kwargs)
         self.search_ms = search_ms
+
+    def _endgame_configs(self):
+        if len(self.remaining) <= 2:
+            return super()._endgame_configs()
+        if (not self.rules.no_touching or self.hits or not self.rules.announces_sunk
+                or len(self.remaining) > 4 or any(n != 1 for n in self.remaining)):
+            return None
+        key = (self.empty, self.sunk, tuple(self.remaining), tuple(self.distances))
+        if getattr(self, '_config_key', None) == key:
+            return self._config_value
+        available = ((1 << self.size) - 1) & ~(self.empty | self.sunk)
+        count = len(self.remaining)
+        if (self.search_ms <= 0 or available.bit_count() < count
+                or math.comb(available.bit_count(), count) > self.MAX_COMBINATIONS):
+            return None
+        deadline = time.monotonic() + self.search_ms / 1000
+        tables = placement_distances(self.rules.rows, self.rules.columns, 1)
+        priors = self._priors(1)
+        # Sunk ships may have explained an older reading. Remaining ships must
+        # still be at least that far away; never require a now-sunk nearest ship.
+        checks = [(q, d, any(tables[i][q] == d for i in range(self.size)
+                              if self.sunk >> i & 1)) for q, d in self.distances]
+        configs, chosen = [], []
+        nodes = 0
+
+        def visit(candidates, left, mask, weight):
+            nonlocal nodes
+            nodes += 1
+            if nodes > self.MAX_NODES or (nodes % 64 == 1 and time.monotonic() >= deadline):
+                raise _SearchLimit
+            if not left:
+                if all(explained or min(tables[i][q] for i in chosen) == d
+                       for q, d, explained in checks):
+                    configs.append((mask, weight, tuple((1, i) for i in chosen)))
+                return
+            while candidates.bit_count() >= left:
+                bit = candidates & -candidates
+                candidates ^= bit
+                i = bit.bit_length() - 1
+                if any(tables[i][q] < d for q, d, _ in checks):
+                    continue
+                chosen.append(i)
+                visit(candidates & ~(self.side[i] | self.diagonal[i]), left - 1,
+                      mask | bit, weight * (priors[i] if priors else 1.0))
+                chosen.pop()
+        try:
+            visit(available, count, 0, 1.0)
+            result = configs or None
+        except _SearchLimit:
+            result = None
+        self._config_key, self._config_value = key, result
+        return result
 
     def _weights(self):
         if (not self.rules.no_touching or self.hits or not self.remaining
@@ -91,6 +144,7 @@ class HakiObservationBot(ProbabilityBot):
 
     def __init__(self):
         super().__init__()
+        self.haki_book = HakiBook()
         # Standard-board tables are warmed before a timed move, as in Boris's bot.
         for length in (1, 2, 3, 4):
             placement_distances(10, 10, length)
@@ -106,8 +160,9 @@ class HakiObservationBot(ProbabilityBot):
         return max(0, min(state.bonuses.get("DISTANCE", 0), 2 - used))
 
     def plan(self, state: model.GameState) -> Plan:
-        return choose_haki_plan(state.rules.modifier, state.opponent_info,
+        base = choose_haki_plan(state.rules.modifier, state.opponent_info,
                                 self.book.lookup(state.opponent_info))
+        return self.haki_book.adapt(base, state.opponent_info, state.rules.modifier)
 
     def choose_action(self, state: model.GameState, time_budget_ms: int) -> model.Action:
         started = time.monotonic()
