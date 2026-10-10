@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from .geometry import placements, to_cell
+from .geometry import along_border, border_mask, placements, to_cell
 from .rules import Cell, Rules
 
 Ship = list[Cell]
@@ -25,6 +25,34 @@ def random_placement(rules: Rules, rng: random.Random) -> list[Ship]:
         else:
             return ships
     raise ValueError("не удалось расставить флот: он не помещается на поле")
+
+
+def edge_placement(rules: Rules, rng: random.Random) -> list[Ship]:
+    """Корабли длиннее одной клетки — вдоль краёв поля, однопалубные — внутри.
+
+    Так расставляет встроенный бот HARD. Если на краях или внутри места нет, корабль встаёт где получится.
+    """
+    border = border_mask(rules.rows, rules.columns)
+    for _ in range(1000):
+        forbidden = 0
+        ships: list[Ship] = []
+        for length in rules.fleet:
+            free = [p for p in placements(rules.rows, rules.columns, length) if not p[0] & forbidden]
+            if length == 1:
+                preferred = [p for p in free if not p[0] & border]
+            else:
+                preferred = [p for p in free if along_border(p[2], rules.rows, rules.columns)]
+            if not free:
+                break
+            mask, around, cells = rng.choice(preferred or free)
+            forbidden |= mask | (around if rules.no_touching else 0)
+            ships.append([to_cell(index, rules.columns) for index in cells])
+        else:
+            return ships
+    raise ValueError("не удалось расставить флот: он не помещается на поле")
+
+
+PLACEMENTS = {"random": random_placement, "edges": edge_placement}
 
 
 def validate_placement(rules: Rules, ships: list[Ship]) -> str | None:

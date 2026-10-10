@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from ..geometry import bits, neighbour_masks, placements, ring, to_cell
+from dataclasses import dataclass
+
+from ..geometry import bits, neighbour_masks, placement_priors, placements, ring, to_cell
 from ..rules import Cell
 from .base import Strategy
 
@@ -11,9 +13,24 @@ from .base import Strategy
 HIT_WEIGHT = 10_000
 
 
+@dataclass(frozen=True)
+class EdgeBias:
+    """Поправка для соперника, который ставит корабли вдоль краёв поля."""
+
+    edge: float = 1.0  # вес клетки на краю для кораблей длиннее одной клетки
+    corner: float = 1.0  # вес угловой клетки
+    single_edge: float = 1.0  # вес крайней клетки для однопалубных
+
+
+# Подобрано в симуляторе против расстановки встроенного бота HARD: крупные корабли вдоль
+# краёв, однопалубные внутри. 51 выстрел до потопления против 62 без поправки.
+HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
+
+
 class ProbabilityStrategy(Strategy):
-    def __init__(self, rules, rng=None):
-        super().__init__(rules, rng)
+    def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, **kwargs):
+        super().__init__(rules, rng, **kwargs)
+        self.edge_bias = edge_bias
         self.size = rules.rows * rules.columns
         self.side, self.diagonal = neighbour_masks(rules.rows, rules.columns)
         self.remaining = list(rules.fleet)  # длины ещё не потопленных кораблей
@@ -66,17 +83,27 @@ class ProbabilityStrategy(Strategy):
         hits = self.hits
         for length in set(self.remaining):
             count = self.remaining.count(length)
-            for mask, around, cells in placements(self.rules.rows, self.rules.columns, length):
+            options = placements(self.rules.rows, self.rules.columns, length)
+            priors = self._priors(length)
+            for number, (mask, around, cells) in enumerate(options):
                 if mask & blocked or (self.rules.no_touching and around & hits):
                     continue
                 covered = (mask & hits).bit_count()
                 if covered == length:  # корабль целиком подбит: новых клеток не даёт
                     continue
                 weight = count * HIT_WEIGHT**covered
+                if priors:
+                    weight *= priors[number]
                 for index in cells:
                     if not hits >> index & 1:
                         weights[index] += weight
         return weights
+
+    def _priors(self, length: int):
+        bias = self.edge_bias
+        if bias is None:
+            return None
+        return placement_priors(self.rules.rows, self.rules.columns, length, bias.edge, bias.corner, bias.single_edge)
 
     def _group(self, index: int) -> int:
         """Связная по стороне группа подбитых клеток, в которую входит клетка."""

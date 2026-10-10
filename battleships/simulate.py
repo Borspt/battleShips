@@ -1,7 +1,7 @@
 """Сравнение стратегий в симуляторе.
 
     python -m battleships.simulate --a probability --b baseline --games 1000
-    python -m battleships.simulate --a probability --b baseline --modifier HUNGER_GAMES
+    python -m battleships.simulate --a edges-biased --b edges --placement edges
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ import random
 import statistics
 import time
 
-from .placement import random_placement
+from .placement import PLACEMENTS
 from .rules import Rules
 from .simulator import play_match, play_solo
 from .strategies import STRATEGIES
@@ -19,13 +19,13 @@ from .strategies import STRATEGIES
 MODIFIERS = ["DUEL", "THREE_MUSKETEERS", "SCHRODINGER_SHIP", "HUNGER_GAMES", "SPEEDRUN", "BIRD_BOX", "OLD_SCHOOL"]
 
 
-def solo_report(name: str, rules: Rules, games: int, seed: int) -> str:
-    """Стрельба по случайным расстановкам: число выстрелов до потопления флота и время на ход."""
+def solo_report(name: str, rules: Rules, games: int, seed: int, placement: str = "random") -> str:
+    """Стрельба по расстановкам выбранного вида: число выстрелов до потопления флота и время на ход."""
     rng = random.Random(seed)
     shots, hits, destroyed, slowest = [], [], 0, 0.0
     started = time.perf_counter()
     for _ in range(games):
-        ships = random_placement(rules, rng)
+        ships = PLACEMENTS[placement](rules, rng)
         shooter = STRATEGIES[name](rules, random.Random(rng.random()))
         game_started = time.perf_counter()
         result = play_solo(rules, shooter, ships)
@@ -61,13 +61,16 @@ def main() -> None:
     parser.add_argument("--b", default="baseline", choices=STRATEGIES)
     parser.add_argument("--games", type=int, default=1000)
     parser.add_argument("--modifier", choices=MODIFIERS, default=None)
+    parser.add_argument("--placement", choices=PLACEMENTS, default="random",
+                        help="расстановка мишени в замере стрельбы; в партиях каждая стратегия расставляет сама")
     parser.add_argument("--seed", type=int, default=1)
     args = parser.parse_args()
 
     rules = Rules.for_modifier(args.modifier)
-    print(f"Правила: модификатор {args.modifier or 'нет'}, лимит выстрелов {rules.shot_limit}, партий {args.games}")
+    print(f"Правила: модификатор {args.modifier or 'нет'}, лимит выстрелов {rules.shot_limit}, партий {args.games}, "
+          f"мишень в замере стрельбы: {args.placement}")
     for name in dict.fromkeys([args.a, args.b]):
-        print(solo_report(name, rules, args.games, args.seed))
+        print(solo_report(name, rules, args.games, args.seed, args.placement))
     print(duel_report(args.a, args.b, rules, args.games, args.seed))
 
 
