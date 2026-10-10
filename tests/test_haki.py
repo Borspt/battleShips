@@ -17,12 +17,12 @@ from tests.fixtures import started
 
 
 class HakiTest(unittest.TestCase):
-    def test_ranked_defence_ignores_training_and_preserves_other_bot(self):
+    def test_ranked_defence_stays_unpredictable_despite_historical_profile(self):
         opponent = SimpleNamespace(built_in_bot=None)
         for share in (0.0, 0.125, 0.25):
             profile = {'matches': 200, 'openingOnBorder': 0.99,
                        'vsBots': {'matches': 9, 'openingShots': 120, 'openingOnBorder': share}}
-            self.assertIs(choose_haki_plan('DUEL', opponent, profile).placement, edge_placement)
+            self.assertIs(choose_haki_plan('DUEL', opponent, profile).placement, random_placement)
             self.assertIs(choose_plan('DUEL', opponent, profile).placement, random_placement)
 
     def test_sparse_or_missing_team_evidence_never_uses_training_defence(self):
@@ -36,7 +36,7 @@ class HakiTest(unittest.TestCase):
 
     def test_edge_attacker_and_mixed_attacker(self):
         opponent = SimpleNamespace(built_in_bot=None)
-        for share, expected in [(0.9, interior_placement), (0.5, random_placement)]:
+        for share, expected in [(0.9, random_placement), (0.5, random_placement)]:
             profile = {'vsBots': {'matches': 8, 'openingShots': 120, 'openingOnBorder': share,
                                  'placements': 8, 'longShipsOnBorder': 0.7}}
             plan = choose_haki_plan('DUEL', opponent, profile)
@@ -52,7 +52,7 @@ class HakiTest(unittest.TestCase):
         bot = HakiObservationBot()
         profile = {'vsBots': {'matches': 8, 'openingShots': 120, 'openingOnBorder': 0.1}}
         with mock.patch.object(bot.book, 'lookup', return_value=profile):
-            self.assertIs(bot.plan(state).placement, edge_placement)
+            self.assertIs(bot.plan(state).placement, random_placement)
 
     def test_joint_search_counts_only_non_touching_fleets(self):
         # На строке из 5 клеток 2 одиночки: (0,2),(0,3),(0,4),(1,3),(1,4),(2,4).

@@ -1,0 +1,848 @@
+{
+  "rules": {
+    "columns": 10,
+    "rows": 10,
+    "fleet": [
+      {
+        "length": 4,
+        "count": 1
+      },
+      {
+        "length": 3,
+        "count": 2
+      },
+      {
+        "length": 2,
+        "count": 3
+      },
+      {
+        "length": 1,
+        "count": 4
+      }
+    ],
+    "touchRule": "NO_TOUCHING_EVEN_DIAGONALLY",
+    "turnAfterHitRule": "SHOOTER_KEEPS_TURN",
+    "matchDurationSeconds": 210,
+    "shotLimitPerPlayer": 100,
+    "moveTimeoutSeconds": 1,
+    "placementWindowSeconds": 10,
+    "modifier": "THREE_MUSKETEERS",
+    "shotsPerTurn": 3
+  },
+  "ships": [
+    {
+      "cells": [
+        {
+          "row": 1,
+          "column": 3
+        },
+        {
+          "row": 1,
+          "column": 4
+        },
+        {
+          "row": 1,
+          "column": 5
+        },
+        {
+          "row": 1,
+          "column": 6
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 6,
+          "column": 4
+        },
+        {
+          "row": 7,
+          "column": 4
+        },
+        {
+          "row": 8,
+          "column": 4
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 7,
+          "column": 6
+        },
+        {
+          "row": 7,
+          "column": 7
+        },
+        {
+          "row": 7,
+          "column": 8
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 3,
+          "column": 3
+        },
+        {
+          "row": 4,
+          "column": 3
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 3,
+          "column": 8
+        },
+        {
+          "row": 4,
+          "column": 8
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 9,
+          "column": 8
+        },
+        {
+          "row": 9,
+          "column": 9
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 3,
+          "column": 5
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 0,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 6,
+          "column": 0
+        }
+      ]
+    },
+    {
+      "cells": [
+        {
+          "row": 2,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "shots": [
+    {
+      "cell": {
+        "row": 5,
+        "column": 6
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 5
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 3
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 4
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 5
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 5
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 6
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 4
+      },
+      "result": "DEFENDED"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 4
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 3
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 2
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 2
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 3
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 7
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 7
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 4
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 1
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 1
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 9
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 5
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 3
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 4
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 3
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 2
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 0,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 9
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 9
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 9
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 9
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 6
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 0,
+        "column": 2
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 0,
+        "column": 5
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 5
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 4
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 6
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 1
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 1
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 0
+      },
+      "result": "SUNK"
+    }
+  ],
+  "opponentShots": [
+    {
+      "cell": {
+        "row": 0,
+        "column": 3
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 9
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 2
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 6
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 5
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 6
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 7
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 8
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 4
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 3
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 4
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 3
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 3
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 9
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 3
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 1
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 6
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 5
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 6
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 4
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 3
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 2
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 8,
+        "column": 4
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 4
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 4
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 2
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 1,
+        "column": 9
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 0,
+        "column": 8
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 6,
+        "column": 1
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 7,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 6
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 5
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 5,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 1
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 8
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 7
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 4,
+        "column": 8
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 3,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 2,
+        "column": 1
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 0,
+        "column": 0
+      },
+      "result": "MISS"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 8
+      },
+      "result": "HIT"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 9
+      },
+      "result": "SUNK"
+    },
+    {
+      "cell": {
+        "row": 9,
+        "column": 6
+      },
+      "result": "MISS"
+    }
+  ],
+  "shotsLeft": 54,
+  "bonuses": [
+    {
+      "bonus": "DISTANCE",
+      "uses": 2
+    }
+  ],
+  "actualRemaining": [
+    [
+      1,
+      7
+    ],
+    [
+      1,
+      9
+    ]
+  ],
+  "sourceMatch": "54dfe361-0f43-4e35-b396-c2252e7a7f00"
+}

@@ -6,8 +6,9 @@ import math
 import time
 
 from .. import model
-from ..placement import edge_placement, interior_placement, random_placement
-from .adaptation import Plan, choose_plan, MIN_MATCHES
+from ..geometry import placement_distances
+from ..placement import random_placement
+from .adaptation import Plan, choose_plan
 from .contract import ProbabilityBot, core_rules
 from .probability import ProbabilityStrategy
 
@@ -17,31 +18,15 @@ class _SearchLimit(Exception):
 
 
 def choose_haki_plan(modifier, opponent, profile) -> Plan:
-    """Only Haki: defend against team-bot openings, never mixed training statistics.
-
-    Keep the shared attack plan, but choose defence from the matching opponent
-    population. Sparse/unknown team evidence means random placement. A real zero
-    border share is evidence, not a missing value.
-    """
+    """Haki defence stays random against adaptable teams; shared attack priors remain."""
     base = choose_plan(modifier, opponent, profile)
     if getattr(opponent, "built_in_bot", None):
         return base
-    versus = (profile or {}).get("vsBots") or {}
-    share = versus.get("openingOnBorder")
-    placement = random_placement
-    reason = "Хаки: мало данных о дебюте против команд; случайная расстановка"
-    if (versus.get("matches", 0) >= MIN_MATCHES
-            and isinstance(share, (int, float)) and 0 <= share <= 1
-            and versus.get("openingShots", 0) >= 15 * MIN_MATCHES):
-        if share <= 0.25:
-            placement = edge_placement
-            reason = f"Хаки: против команд {share:.0%} дебютных выстрелов у края; флот к краям"
-        elif share >= 0.85:
-            placement = interior_placement
-            reason = f"Хаки: против команд {share:.0%} дебютных выстрелов у края; флот внутри"
-        else:
-            reason = f"Хаки: смешанный дебют против команд ({share:.0%} у края); случайный флот"
-    return Plan(placement, base.edge_bias, reason + "; базовая оценка: " + base.reason)
+    # Opponents adapt to our public replays; mixed historical openings are not
+    # reliable evidence for exposing a predictable border/interior fleet.
+    return Plan(random_placement, base.edge_bias,
+                "Хаки: случайный флот против команды; исторический дебют не определяет защиту; "
+                + base.reason)
 
 
 class HakiEndgameStrategy(ProbabilityStrategy):
@@ -102,7 +87,23 @@ class HakiEndgameStrategy(ProbabilityStrategy):
 
 
 class HakiObservationBot(ProbabilityBot):
-    """Отдельная защита по рейтинговым дебютам + концовка; бонусы не применяет."""
+    """Случайная защита против команд, совместная концовка и до двух DISTANCE."""
+
+    def __init__(self):
+        super().__init__()
+        # Standard-board tables are warmed before a timed move, as in Boris's bot.
+        for length in (1, 2, 3, 4):
+            placement_distances(10, 10, length)
+
+    def _distance_budget(self, state, used):
+        if state.shots_left <= 1 or used >= 2:
+            return 0
+        if state.ships and state.rules.modifier != "BIRD_BOX":
+            fleet = sum(map(len, state.ships))
+            damaged = len({c for c, result in state.opponent_shots if result in ("HIT", "SUNK")})
+            if fleet and (fleet - damaged) / fleet > 0.55:
+                return 0
+        return max(0, min(state.bonuses.get("DISTANCE", 0), 2 - used))
 
     def plan(self, state: model.GameState) -> Plan:
         return choose_haki_plan(state.rules.modifier, state.opponent_info,
@@ -116,7 +117,20 @@ class HakiObservationBot(ProbabilityBot):
         shooter = HakiEndgameStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
+        answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE"]
+        for answer in answers:
+            cell = answer.get("requestedCell") or {}
+            row, column, distance = cell.get("row"), cell.get("column"), answer.get("distance")
+            if (all(type(v) is int for v in (row, column, distance))
+                    and 0 <= row < state.rules.rows and 0 <= column < state.rules.columns
+                    and 0 <= distance <= state.rules.rows + state.rules.columns - 2):
+                shooter.on_distance((row, column), distance)
         # Оставляем время на обычный расчёт, сериализацию и ответ процессу оболочки.
         remaining_ms = time_budget_ms - (time.monotonic() - started) * 1000 - 30
         shooter.search_ms = max(0.0, min(40.0, remaining_ms))
-        return model.Action.shoot(model.Cell(*shooter.next_shot()))
+        if remaining_ms >= 50:
+            shooter.distance_uses = self._distance_budget(state, len(answers))
+        kind, cell = shooter.next_action()
+        if kind == "DISTANCE":
+            return model.Action("USE_BONUS", cell=model.Cell(*cell), bonus="DISTANCE")
+        return model.Action.shoot(model.Cell(*cell))
