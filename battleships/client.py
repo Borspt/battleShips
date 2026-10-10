@@ -264,7 +264,8 @@ class Controller:
 
 async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: str,
                   log_dir: str, budget_ms: int, reserve_ms: int, allow_bonuses: bool,
-                  stop_after: int = 0, opponent_ratings_file: str | None = None):
+                  stop_after: int = 0, opponent_ratings_file: str | None = None,
+                  stop_on_loss: bool = False):
     worker = StrategyWorker(strategy)
     journal = Journal(log_dir, token)
     completed = 0
@@ -308,6 +309,11 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                         if message.get("type") == "MATCH_FINISHED":
                             completed += 1
                             delay = 0.5
+                            if stop_on_loss and message.get("outcome") == "LOSS":
+                                journal.write("stop_on_loss", {"completed": completed,
+                                              "end_reason": message.get("endReason")})
+                                LOG.info("First loss received; stopping without reconnect")
+                                return
                             if stop_after and completed >= stop_after:
                                 return
                     # A normal close can also carry a terminal platform code.

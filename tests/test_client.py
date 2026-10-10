@@ -176,6 +176,46 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
 
 
 class IntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_first_loss_disconnects_and_default_continues(self):
+        for stop_on_loss, outcomes in ((True, ["WIN", "DRAW", "LOSS"]), (False, ["LOSS", "WIN"])):
+            with self.subTest(stop_on_loss=stop_on_loss):
+                errors, commands, connections = [], [], []
+
+                async def handler(ws):
+                    connections.append(True)
+                    try:
+                        await ws.recv()  # CHANGE_MODE
+                        for outcome in outcomes:
+                            await ws.send(json.dumps(started("SPEEDRUN")))
+                            await ws.send(json.dumps({"type": "TURN_REQUESTED", "moveNumber": 1,
+                                                      "shotsLeft": 100, "shotsLeftInTurn": 1}))
+                            commands.append(json.loads(await asyncio.wait_for(ws.recv(), 2)))
+                            await ws.send(json.dumps({"type": "MATCH_FINISHED", "outcome": outcome,
+                                                      "endReason": "FLEET_DESTROYED"}))
+                        # Уже поставленные в очередь события не должны начать ещё одну игру.
+                        await ws.send(json.dumps(started("SPEEDRUN")))
+                        await ws.send(json.dumps({"type": "TURN_REQUESTED", "moveNumber": 1,
+                                                  "shotsLeft": 100, "shotsLeftInTurn": 1}))
+                        async for unexpected in ws:
+                            errors.append(unexpected)
+                    except Exception as exc:
+                        errors.append(repr(exc))
+
+                with tempfile.TemporaryDirectory() as temp:
+                    async with serve(handler, "127.0.0.1", 0) as server:
+                        port = server.sockets[0].getsockname()[1]
+                        await asyncio.wait_for(run_bot(
+                            url=f"ws://127.0.0.1:{port}", token="local-token",
+                            strategy="battleships.strategy:BaselineStrategy", mode="RANKING", opponent="EASY",
+                            log_dir=temp, budget_ms=150, reserve_ms=250, allow_bonuses=False,
+                            stop_after=10 if stop_on_loss else 2, stop_on_loss=stop_on_loss), 15)
+                    records = [json.loads(line) for path in Path(temp).glob("*.jsonl")
+                               for line in path.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual(errors, [])
+                self.assertEqual(len(connections), 1)
+                self.assertEqual(len(commands), len(outcomes))
+                self.assertEqual(sum(r["event"] == "stop_on_loss" for r in records), int(stop_on_loss))
+
     async def test_three_clients_work_concurrently(self):
         errors = []
         finished = []

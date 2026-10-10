@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--reserve-ms", type=int, default=250)
     parser.add_argument("--allow-bonuses", action="store_true", help="Allow strategy to spend rating on bonuses")
     parser.add_argument("--stop-after", type=int, default=0, help="Stop after N matches; 0 = continuous")
+    parser.add_argument("--stop-on-loss", action="store_true", help="Disconnect after the first LOSS; do not reconnect")
     args = parser.parse_args()
     load_env(args.env_file)
     token = os.environ.get(args.token_env, "").strip()
@@ -53,7 +54,8 @@ def main():
         asyncio.run(run_bot(url=url, token=token, strategy=args.strategy, mode=args.mode,
                             opponent=args.opponent, log_dir=args.log_dir, budget_ms=args.budget_ms,
                             reserve_ms=args.reserve_ms, allow_bonuses=args.allow_bonuses,
-                            stop_after=args.stop_after, opponent_ratings_file=args.opponent_ratings_file))
+                            stop_after=args.stop_after, opponent_ratings_file=args.opponent_ratings_file,
+                            stop_on_loss=args.stop_on_loss))
     except KeyboardInterrupt:
         pass
     except Exception as exc:
