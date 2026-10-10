@@ -88,6 +88,19 @@ def placement_priors(rows: int, columns: int, length: int, edge: float, corner: 
     return tuple(result)
 
 
+@lru_cache(maxsize=None)
+def placement_distances(rows: int, columns: int, length: int) -> tuple[tuple[int, ...], ...]:
+    """Для каждого положения из placements(): манхэттенское расстояние от каждой клетки поля до корабля."""
+    result = []
+    for _, _, cells in placements(rows, columns, length):
+        ship = [divmod(index, columns) for index in cells]
+        result.append(tuple(
+            min(abs(row - r) + abs(column - c) for r, c in ship)
+            for row in range(rows) for column in range(columns)
+        ))
+    return tuple(result)
+
+
 def bits(mask: int):
     """Индексы единичных битов маски по возрастанию."""
     while mask:

@@ -13,4 +13,9 @@ STRATEGIES: dict[str, Callable[..., Strategy]] = {
     "probability": ProbabilityStrategy,
     "edges": partial(ProbabilityStrategy, placement=edge_placement),
     "edges-biased": partial(ProbabilityStrategy, placement=edge_placement, edge_bias=HARD_BIAS),
+    # С бонусом DISTANCE: цифра — сколько запросов выставлено боту.
+    "probability-d1": partial(ProbabilityStrategy, distance_uses=1),
+    "probability-d2": partial(ProbabilityStrategy, distance_uses=2),
+    "probability-d3": partial(ProbabilityStrategy, distance_uses=3),
+    "edges-biased-d2": partial(ProbabilityStrategy, placement=edge_placement, edge_bias=HARD_BIAS, distance_uses=2),
 }

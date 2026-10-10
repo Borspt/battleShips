@@ -12,7 +12,7 @@ from battleships.model import Action, Cell, GameState, OpponentInfo, Rules, vali
 from battleships.simulator import Board
 from battleships.strategies.adaptation import ProfileBook
 from battleships.strategies import contract
-from battleships.strategies.contract import ProbabilityBot
+from battleships.strategies.contract import ProbabilityBonusBot, ProbabilityBot
 from battleships.worker import StrategyWorker
 from tests.fixtures import started
 
@@ -104,6 +104,49 @@ class ProbabilityBotTest(unittest.TestCase):
                 state = state_for()
                 self.assertTrue(valid_placement(ProbabilityBot().place_ships_for_match(state), state.rules))
 
+    def endgame_state(self, opponent_hits=12):
+        """Поле соперника обстреляно так, что остались два однопалубных в двух несвязанных зонах."""
+        state = state_for()
+        state.ships = ProbabilityBot().place_ships(state.rules)
+        own = [cell for ship in state.ships for cell in ship]
+        state.opponent_shots = [(cell, "HIT") for cell in own[:opponent_hits]]
+        state.bonuses = {"DISTANCE": 3}
+        state.shots_left = 60
+        sunk = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(2, 0), (2, 1), (2, 2)], [(4, 0), (4, 1), (4, 2)],
+                [(6, 0), (6, 1)], [(8, 0), (8, 1)], [(0, 5), (0, 6)], [(0, 8)], [(2, 8)]]
+        for ship in sunk:
+            state.shots += [(Cell(*cell), "HIT") for cell in ship[:-1]] + [(Cell(*ship[-1]), "SUNK")]
+        return state
+
+    def test_bonus_bot_asks_distance_in_endgame_and_uses_the_answer(self):
+        state = self.endgame_state()
+        bot = ProbabilityBonusBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        action = bot.choose_action(state, 150)
+        self.assertEqual((action.type, action.bonus), ("USE_BONUS", "DISTANCE"))
+        self.assertTrue(valid_action(action, state, allow_bonuses=True))
+        self.assertEqual(ProbabilityBot().choose_action(state, 150).type, "SHOOT")
+
+        state.bonuses["DISTANCE"] = 2
+        state.bonus_results.append({"type": "BONUS_RESOLVED", "bonus": "DISTANCE", "distance": 0,
+                                    "requestedCell": {"row": 5, "column": 7}})
+        state.bonus_results.append({"type": "BONUS_RESOLVED", "bonus": "DISTANCE", "distance": 1,
+                                    "requestedCell": {"row": 9, "column": 8}})
+        final = bot.choose_action(state, 150)  # два запроса уже потрачены — третий не берём
+        self.assertEqual(final.type, "SHOOT")
+        self.assertIn(final.cell, {Cell(5, 7), Cell(9, 7), Cell(9, 9), Cell(8, 8)})
+
+    def test_bonus_bot_keeps_rating_when_it_is_safely_ahead_or_out_of_shots(self):
+        bot = ProbabilityBonusBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=4), 150).type, "SHOOT")
+        last_shot = self.endgame_state()
+        last_shot.shots_left = 1
+        self.assertEqual(bot.choose_action(last_shot, 150).type, "SHOOT")
+        no_uses = self.endgame_state()
+        no_uses.bonuses = {}
+        self.assertEqual(bot.choose_action(no_uses, 150).type, "SHOOT")
+
     def test_defended_cell_is_shot_again(self):
         state = state_for()
         state.shots = [(Cell(4, 4), "DEFENDED")]
@@ -118,6 +161,16 @@ class ProbabilityBotTest(unittest.TestCase):
 
 
 class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
+    async def test_bonus_bot_answers_within_shell_budget(self):
+        worker = StrategyWorker("battleships.strategies.contract:ProbabilityBonusBot")
+        try:
+            await worker.start()
+            state = ProbabilityBotTest().endgame_state()
+            action = await worker.call("choose_action", (state, 150), 0.15)
+            self.assertEqual((action.type, action.bonus), ("USE_BONUS", "DISTANCE"))
+        finally:
+            await worker.close()
+
     async def test_runs_in_shell_worker_process(self):
         worker = StrategyWorker(PATH)
         try:
