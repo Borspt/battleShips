@@ -140,8 +140,8 @@ class ProbabilityBotTest(unittest.TestCase):
         bot = ProbabilityBonusBot()
         bot.book = ProfileBook(Path("no-such-profiles.json"))
         self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=4), 150).type, "SHOOT")
-        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=12), 150).type, "SHOOT")  # 18 против 12
-        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=13), 150).type, "USE_BONUS")
+        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=13), 150).type, "SHOOT")  # 18 против 13
+        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=14), 150).type, "USE_BONUS")
         last_shot = self.endgame_state()
         last_shot.shots_left = 1
         self.assertEqual(bot.choose_action(last_shot, 150).type, "SHOOT")
@@ -164,10 +164,10 @@ class ProbabilityBotTest(unittest.TestCase):
                     [(6, 0), (6, 1)], [(8, 0), (8, 1)]]
             state.shots = [(Cell(*cell), "HIT") for ship in sunk for cell in ship] + [(Cell(4, 6), "HIT")]
             return bot.choose_action(state, 150)
-        for opponent_hits in (10, 15, 19):  # ведём меньше шести попаданий, вровень или отстаём
+        for opponent_hits in (11, 15, 19):  # ведём меньше пяти попаданий, вровень или отстаём
             asked = action(opponent_hits)
             self.assertEqual((asked.type, asked.bonus, asked.cell), ("USE_BONUS", "DISTANCE", Cell(4, 6)), opponent_hits)
-        self.assertEqual(action(9).type, "SHOOT")  # пятнадцать попаданий против девяти
+        self.assertEqual(action(10).type, "SHOOT")  # пятнадцать попаданий против десяти
 
     def musketeers_state(self):
         state = state_for("THREE_MUSKETEERS")
