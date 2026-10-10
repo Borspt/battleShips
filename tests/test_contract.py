@@ -270,6 +270,14 @@ class ProbabilityBotTest(unittest.TestCase):
         stepped = [(Cell(9, 9), "MINE"), (Cell(9, 0), "MINE")]
         self.assertLessEqual(len(openings([{"bonus": "MINE", "uses": 2}], stepped)), 16)
 
+    def test_hunger_games_shoot_best_cell_even_against_mines(self):
+        bot = ProbabilityBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        state = state_for("HUNGER_GAMES")
+        state.opponent = {"kind": "REMOTE_BOT", "botId": "x", "bonuses": [{"bonus": "MINE", "uses": 3}]}
+        self.assertEqual(bot._spread(state), 0.0)  # пропуск хода не стоит попаданий: исход решают выстрелы
+        self.assertLessEqual(len({bot.choose_action(state, 150).cell for _ in range(60)}), 16)
+
     def test_defended_cell_is_shot_again(self):
         state = state_for()
         state.shots = [(Cell(4, 4), "DEFENDED")]

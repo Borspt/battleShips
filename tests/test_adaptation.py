@@ -76,6 +76,21 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertIn("ботов в среднем", typical.reason)
         self.assertEqual(choose_plan(None, REMOTE, profile(recent=recent)).placement, random_placement)  # другие режимы
 
+    def test_hunger_games_ignore_singles_on_border(self):
+        habits = versus_bots(longShipsOnBorder=0.36, singlesOnBorderShare=0.75)
+        self.assertIsNone(choose_plan("HUNGER_GAMES", REMOTE, profile(vsBots=habits)).edge_bias)
+        long_ships = choose_plan("HUNGER_GAMES", REMOTE, profile(vsBots=versus_bots(
+            longShipsOnBorder=0.7, singlesOnBorderShare=0.75))).edge_bias
+        self.assertEqual((long_ships.edge, long_ships.single_edge), (MEDIUM_BIAS.edge, MEDIUM_BIAS.single_edge))
+        self.assertGreater(choose_plan(None, REMOTE, profile(vsBots=habits)).edge_bias.single_edge, 3.0)
+
+    def test_hunger_games_fall_back_to_opponents_opening_cells(self):
+        opening = {f"{row},{column}": 30 for row in range(10) for column in range(5)}
+        plan = choose_plan("HUNGER_GAMES", REMOTE, profile(openingCells=opening), {"4,4": 0.5})
+        self.assertIn("в дебюте за день", plan.reason)  # свой дебют соперника важнее среднего по ботам
+        self.assertEqual(plan.placement.__name__, "evasive_placement")
+        self.assertIn("ботов в среднем", choose_plan("HUNGER_GAMES", REMOTE, profile(), {"4,4": 0.5}).reason)
+
     def test_recent_games_override_whole_day_and_games_with_us_override_both(self):
         day = versus_bots(longShipsOnBorder=0.31)
         recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.5}

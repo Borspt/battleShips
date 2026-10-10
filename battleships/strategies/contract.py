@@ -87,6 +87,10 @@ class ProbabilityBot:
     @staticmethod
     def _spread(state: model.GameState) -> float:
         """Пока у соперника есть мины, на которые мы ещё не наступили, не даём предсказать наш выстрел."""
+        if state.rules.modifier == "HUNGER_GAMES":
+            # Пропуск хода здесь ничего не стоит: исход решают 20 выстрелов, а не ходы. Мина лежит в пустой
+            # клетке — выстрел туда и так промах. Разброс только отнимал бы попадания у лучшей клетки.
+            return 0.0
         mines = sum(b.get("uses", 0) for b in (state.opponent or {}).get("bonuses") or [] if b.get("bonus") == "MINE")
         stepped = sum(result == "MINE" for _, result in state.shots)
         return MINE_SPREAD if mines > stepped else 0.0

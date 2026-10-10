@@ -63,7 +63,10 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
         # Однопалубные: во сколько раз крайняя клетка занята чаще внутренней. На краю 36% клеток поля.
         singles = habits.get("singlesOnBorderShare")
         single_edge = None
-        if singles is not None and 0 < singles < 1:
+        # «Голодные игры»: поправка на однопалубные у края стоит попаданий. В симуляторе (20 выстрелов,
+        # 100 партий на группу) вес ×4 отнимал 1,0–1,3 попадания даже у соперника, ставящего у края
+        # 70–80% однопалубных; ×2 — ±0,2. Там однопалубные весят как остальные клетки.
+        if singles is not None and 0 < singles < 1 and modifier != "HUNGER_GAMES":
             single_edge = round(min(4.0, max(0.5, (singles / 0.36) / ((1 - singles) / 0.64))), 2)
         if bias:
             if single_edge is not None:
@@ -98,13 +101,20 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
     # «Голодные игры»: выстрелов мало, флот никто не топит, считаются попадания. Прячем корабли от
     # первых выстрелов этого соперника, а если его не знаем — от первых выстрелов всех ботов в среднем.
     if modifier == "HUNGER_GAMES":
-        early, origin = typical_early, "ботов в среднем"
+        early, origin = None, ""
         for section, minimum, label in (("recentVsUs", MIN_RECENT_VS_US, "соперника в партиях с нами"),
                                         ("recent", MIN_PLACEMENTS, "соперника в последних партиях")):
             candidate = (profile or {}).get(section) or {}
             if candidate.get("matches", 0) >= minimum and candidate.get("earlyCells"):
                 early, origin = candidate["earlyCells"], label
                 break
+        if not early and (profile or {}).get("matches", 0) >= MIN_MATCHES and profile.get("openingCells"):
+            # Профили до появления earlyCells: берём дебют этого соперника (первые 15 выстрелов) за день.
+            matches = profile["matches"]
+            early = {cell: count / matches for cell, count in profile["openingCells"].items()}
+            origin = "соперника в дебюте за день"
+        if not early and typical_early:
+            early, origin = typical_early, "ботов в среднем"
         if early:
             danger = {tuple(int(part) for part in cell.split(",")): share for cell, share in early.items()}
             placement = partial(evasive_placement, danger=danger)
@@ -135,6 +145,9 @@ class ProfileBook:
             totals, bots = {}, 0
             for profile in self.profiles.values():
                 early = (profile.get("recent") or {}).get("earlyCells")
+                if not early and profile.get("matches") and profile.get("openingCells"):
+                    # Профили без earlyCells: дебют бота (первые 15 выстрелов) за день, доля партий.
+                    early = {cell: count / profile["matches"] for cell, count in profile["openingCells"].items()}
                 if profile.get("kind") == "REMOTE_BOT" and early:
                     bots += 1
                     for cell, share in early.items():
