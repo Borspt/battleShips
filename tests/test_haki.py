@@ -3,18 +3,57 @@ import random
 import unittest
 from dataclasses import replace
 from unittest import mock
+from types import SimpleNamespace
 
 from battleships import model
-from battleships.placement import random_placement
+from battleships.placement import random_placement, edge_placement, interior_placement, validate_placement
 from battleships.rules import Rules
 from battleships.simulator import Board
-from battleships.strategies.haki import HakiEndgameStrategy, HakiObservationBot
+from battleships.strategies.haki import HakiEndgameStrategy, HakiObservationBot, choose_haki_plan
+from battleships.strategies.adaptation import choose_plan
 from battleships.strategies.probability import EdgeBias, ProbabilityStrategy
 from battleships.worker import StrategyWorker
 from tests.fixtures import started
 
 
 class HakiTest(unittest.TestCase):
+    def test_ranked_defence_ignores_training_and_preserves_other_bot(self):
+        opponent = SimpleNamespace(built_in_bot=None)
+        for share in (0.0, 0.125, 0.25):
+            profile = {'matches': 200, 'openingOnBorder': 0.99,
+                       'vsBots': {'matches': 9, 'openingShots': 120, 'openingOnBorder': share}}
+            self.assertIs(choose_haki_plan('DUEL', opponent, profile).placement, edge_placement)
+            self.assertIs(choose_plan('DUEL', opponent, profile).placement, random_placement)
+
+    def test_sparse_or_missing_team_evidence_never_uses_training_defence(self):
+        opponent = SimpleNamespace(built_in_bot=None)
+        cases = [{}, {'matches': 4, 'openingShots': 60, 'openingOnBorder': 0},
+                 {'matches': 9, 'openingShots': 10, 'openingOnBorder': 0},
+                 {'matches': 9, 'openingShots': 120, 'openingOnBorder': None}]
+        for versus in cases:
+            profile = {'matches': 200, 'openingOnBorder': 0.1, 'vsBots': versus}
+            self.assertIs(choose_haki_plan('DUEL', opponent, profile).placement, random_placement)
+
+    def test_edge_attacker_and_mixed_attacker(self):
+        opponent = SimpleNamespace(built_in_bot=None)
+        for share, expected in [(0.9, interior_placement), (0.5, random_placement)]:
+            profile = {'vsBots': {'matches': 8, 'openingShots': 120, 'openingOnBorder': share,
+                                 'placements': 8, 'longShipsOnBorder': 0.7}}
+            plan = choose_haki_plan('DUEL', opponent, profile)
+            self.assertIs(plan.placement, expected)
+            self.assertEqual(plan.edge_bias, choose_plan('DUEL', opponent, profile).edge_bias)
+            self.assertIsNone(validate_placement(Rules(), plan.placement(Rules(), random.Random(17))))
+
+    def test_builtin_plan_and_haki_entrypoint(self):
+        builtin = SimpleNamespace(built_in_bot='HARD')
+        self.assertEqual(choose_haki_plan('DUEL', builtin, None), choose_plan('DUEL', builtin, None))
+        state = model.GameState.from_message(started())
+        state.opponent_info = model.OpponentInfo.from_wire({'kind': 'REMOTE_BOT', 'botId': 'test-opponent'})
+        bot = HakiObservationBot()
+        profile = {'vsBots': {'matches': 8, 'openingShots': 120, 'openingOnBorder': 0.1}}
+        with mock.patch.object(bot.book, 'lookup', return_value=profile):
+            self.assertIs(bot.plan(state).placement, edge_placement)
+
     def test_joint_search_counts_only_non_touching_fleets(self):
         # На строке из 5 клеток 2 одиночки: (0,2),(0,3),(0,4),(1,3),(1,4),(2,4).
         rules = Rules(rows=1, columns=5, fleet=(1, 1))
