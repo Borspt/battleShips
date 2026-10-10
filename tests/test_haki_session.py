@@ -7,9 +7,12 @@ from unittest.mock import patch
 
 from websockets.asyncio.server import serve
 
-from battleships.client import run_bot
+from battleships.client import Controller, run_bot
 from battleships.haki_session import HAKI_STRATEGY, HakiSession
 from battleships.strategy import BaselineStrategy
+from battleships.worker import StrategyWorker
+from battleships.strategies.contract import core_rules
+from tests.test_client import MemoryJournal
 from tests.fixtures import started
 
 
@@ -77,6 +80,54 @@ class HakiSessionTests(unittest.TestCase):
 
 
 class HakiTransportTests(unittest.IsolatedAsyncioTestCase):
+    async def test_three_musketeers_keeps_hits_and_waits_for_each_request(self):
+        worker = StrategyWorker(HAKI_STRATEGY)
+        sent = []
+
+        async def send(raw):
+            sent.append(json.loads(raw))
+
+        controller = Controller(send, worker, MemoryJournal(), budget_ms=150,
+                                reserve_ms=250, allow_bonuses=False)
+        try:
+            await worker.start()
+            # Предыдущая партия была DUEL; правила следующей перечитываются.
+            await controller.handle(started('DUEL'))
+            await controller.handle({'type': 'MATCH_FINISHED', 'outcome': 'WIN',
+                                     'endReason': 'FLEET_DESTROYED'})
+            msg = started('THREE_MUSKETEERS')
+            msg['rules']['shotsPerTurn'] = 3
+            msg['rules']['turnAfterHitRule'] = 'SHOOTER_KEEPS_TURN'
+            await controller.handle(msg)
+            await controller.handle({'type': 'PLACEMENT_ACCEPTED'})
+            rules = core_rules(controller.state.rules)
+            self.assertEqual(rules.shots_per_turn, 3)
+            self.assertTrue(rules.hit_keeps_turn)
+            seen = set()
+            # Попадание и потопление сохраняют все 3 выстрела хода.
+            # Только три последующих промаха заканчивают ход.
+            for index, (left, result) in enumerate(
+                    [(3, 'HIT'), (3, 'SUNK'), (3, 'MISS'), (2, 'MISS'), (1, 'MISS')]):
+                before = len(sent)
+                request = {'type': 'TURN_REQUESTED', 'moveNumber': 1,
+                           'shotsLeft': 100-index, 'shotsLeftInTurn': left}
+                await controller.handle(request)
+                self.assertEqual(len(sent), before + 1)
+                self.assertEqual(sent[-1]['type'], 'SHOOT')
+                cell = sent[-1]['cell']
+                key = (cell['row'], cell['column'])
+                self.assertNotIn(key, seen)
+                seen.add(key)
+                await controller.handle({'type': 'SHOT_RESOLVED', 'cell': cell, 'result': result})
+                self.assertEqual(len(sent), before + 1)  # без запроса не стреляет
+            await controller.handle({'type': 'OPPONENT_SHOT',
+                                     'cell': {'row': 0, 'column': 0}, 'result': 'MISS'})
+            self.assertEqual(len(seen), 5)
+            self.assertFalse(any(e == 'strategy_fallback' for e, _ in controller.journal.events))
+        finally:
+            await controller.close()
+            await worker.close()
+
     async def run_case(self, scenario, timeout=30):
         errors, connections, commands = [], [], []
 
