@@ -78,8 +78,10 @@ class ScoutingTest(unittest.TestCase):
         self.assertEqual((profiles["bot:bot-z"]["matches"], profiles["bot:bot-z"]["rating"]), (0, 1500.0))
 
     def test_lookup_by_match_started_opponent(self):
-        save_profiles(build_profiles(self.store), self.store)
-        profiles = load_profiles(self.store)
+        path = self.store / "shared" / "profiles.json"
+        save_profiles(build_profiles(self.store), path)
+        profiles = load_profiles(path)
+        self.assertEqual(list(profiles), sorted(profiles))
         self.assertEqual(profile_for(profiles, {"kind": "REMOTE_BOT", "botId": "bot-a", "builtInBot": None})["team"], "Kraken")
         self.assertEqual(profile_for(profiles, {"kind": "BUILT_IN_BOT", "botId": None, "builtInBot": "HARD"})["key"], "builtin:HARD")
         self.assertEqual(profile_for(profiles, OpponentInfo(key="bot:bot-a", bot_id="bot-a"))["team"], "Kraken")
