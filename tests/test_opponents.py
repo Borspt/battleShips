@@ -105,9 +105,14 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
                 await release.wait()
                 return replace(info, rating=9999)
         self.client.opponent_directory = Directory()
-        before = time.monotonic()
-        await self.client.handle(remote_start("SPEEDRUN"))
-        self.assertLess(time.monotonic() - before, 0.5)
+        # Проверяем ограничение ожидания и незавершённый lookup, а не скорость
+        # планировщика Windows CI: нагруженный runner может проснуться позже.
+        with patch("battleships.client.asyncio.wait", wraps=asyncio.wait) as wait:
+            await asyncio.wait_for(self.client.handle(remote_start("SPEEDRUN")), timeout=5)
+        self.assertEqual(wait.call_count, 1)
+        self.assertEqual(wait.call_args.kwargs["timeout"], 0.1)
+        self.assertFalse(self.client.opponent_task.done())
+        self.assertFalse(release.is_set())
         self.assertIsNone(self.client.state.opponent_info.rating)
         await self.client.handle(started("SPEEDRUN"))
         release.set()
