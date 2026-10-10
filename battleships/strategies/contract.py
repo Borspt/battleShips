@@ -67,7 +67,7 @@ class ProbabilityBot:
         if state.ships is None and not state.shots:  # «Спидран»: расстановки нет, партия начинается с выстрела
             self._record(state, plan, placed=False)
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
-                                      spread=self._spread(state), sunk_checks=True)
+                                      spread=self._spread(state), sunk_checks=True, cell_prior=plan.cell_prior)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
@@ -106,6 +106,7 @@ class ProbabilityBot:
             "modifier": state.rules.modifier,
             "placement": plan.placement.__name__ if placed else None,
             "edgeBias": asdict(plan.edge_bias) if plan.edge_bias else None,
+            "cellPrior": plan.cell_prior is not None,
             "reason": plan.reason,
         }
         try:

@@ -76,6 +76,24 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertIn("ботов в среднем", typical.reason)
         self.assertEqual(choose_plan(None, REMOTE, profile(recent=recent)).placement, random_placement)  # другие режимы
 
+    def test_hunger_games_shooting_follows_fleet_map_of_a_bot_with_favourite_cells(self):
+        import random
+        from battleships.rules import Rules
+        from battleships.strategies.probability import ProbabilityStrategy
+        corner = {f"{row},{column}": 0.9 for row in range(3) for column in range(3)}
+        recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.4,
+                  "fleetCells": corner, "fleetSpread": 0.2}
+        plan = choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent))
+        self.assertEqual(len(plan.cell_prior), 100)
+        self.assertIsNone(plan.edge_bias)
+        self.assertIn("карте его расстановок", plan.reason)
+        rules = Rules.for_modifier("HUNGER_GAMES")
+        row, column = ProbabilityStrategy(rules, random.Random(1), cell_prior=plan.cell_prior).next_shot()
+        self.assertTrue(row < 3 and column < 3)
+        for other in (dict(recent, fleetSpread=0.08), dict(recent, placements=10)):  # случайная расстановка или мало партий
+            self.assertIsNone(choose_plan("HUNGER_GAMES", REMOTE, profile(recent=other)).cell_prior)
+        self.assertIsNone(choose_plan("DUEL", REMOTE, profile(recent=recent)).cell_prior)
+
     def test_recent_games_override_whole_day_and_games_with_us_override_both(self):
         day = versus_bots(longShipsOnBorder=0.31)
         recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.5}
