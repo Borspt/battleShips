@@ -7,7 +7,7 @@ from unittest.mock import patch
 from battleships import model
 from battleships.rules import Rules
 from battleships.strategies.contract import core_rules
-from battleships.strategies.haki import HakiEndgameStrategy, HakiObservationBot
+from battleships.strategies.haki import HakiEndgameStrategy, LegacyHakiObservationBot
 from battleships.strategies.probability import EdgeBias
 
 
@@ -78,7 +78,7 @@ class FourMixedTest(unittest.TestCase):
 
     def test_tiny_action_budget_falls_back_legally(self):
         state = model.GameState.from_message(fixture())
-        action = HakiObservationBot().choose_action(state, 40)
+        action = LegacyHakiObservationBot().choose_action(state, 40)
         self.assertEqual(action.type, 'SHOOT')
         self.assertTrue(model.valid_action(action, state, allow_bonuses=True))
 
@@ -86,7 +86,7 @@ class FourMixedTest(unittest.TestCase):
 class FourMixedWorkerTest(unittest.IsolatedAsyncioTestCase):
     async def test_production_fallback_within_150_ms_worker_budget(self):
         from battleships.worker import StrategyWorker
-        worker = StrategyWorker('battleships.strategies.haki:HakiObservationBot')
+        worker = StrategyWorker('battleships.strategies.haki:LegacyHakiObservationBot')
         try:
             await worker.start()
             state = model.GameState.from_message(fixture())

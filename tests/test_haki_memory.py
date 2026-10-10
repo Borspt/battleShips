@@ -12,7 +12,7 @@ from battleships import model
 from battleships.placement import random_placement
 from battleships.rules import Rules
 from battleships.strategies.adaptation import Plan
-from battleships.strategies.haki import HakiEndgameStrategy, HakiObservationBot
+from battleships.strategies.haki import HakiEndgameStrategy, LegacyHakiObservationBot
 from battleships.strategies.haki_memory import recent_records, adapt_recent, HakiBook
 
 
@@ -77,7 +77,7 @@ class EarlierDistanceTest(unittest.TestCase):
     def test_last_loss_now_requests_bonus_with_three_ships(self):
         fixture=json.loads(Path('tests/haki_three_singletons.json').read_text())
         state=model.GameState.from_message(fixture)
-        action=HakiObservationBot().choose_action(state,150)
+        action=LegacyHakiObservationBot().choose_action(state,150)
         self.assertEqual(action.bonus,'DISTANCE')
         self.assertTrue(model.valid_action(action,state,allow_bonuses=True))
 
@@ -100,7 +100,7 @@ class EarlierDistanceWorkerTest(unittest.IsolatedAsyncioTestCase):
     async def test_real_position_within_worker_deadline(self):
         from battleships.worker import StrategyWorker
         fixture=json.loads(Path('tests/haki_three_singletons.json').read_text())
-        worker=StrategyWorker('battleships.strategies.haki:HakiObservationBot')
+        worker=StrategyWorker('battleships.strategies.haki:LegacyHakiObservationBot')
         try:
             await worker.start()
             action=await worker.call('choose_action',(model.GameState.from_message(fixture),150),.15)

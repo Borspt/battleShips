@@ -9,7 +9,7 @@ from .. import model
 from ..geometry import bits, placement_distances, placements
 from ..placement import random_placement
 from .adaptation import Plan, choose_plan
-from .contract import ProbabilityBot, core_rules
+from .contract import ProbabilityBot, ProbabilityBonusBot, core_rules
 from .probability import ProbabilityStrategy, ENDGAME_SHIPS
 from .haki_memory import HakiBook
 
@@ -225,7 +225,7 @@ class HakiEndgameStrategy(ProbabilityStrategy):
         return scores if any(scores) else super()._weights()
 
 
-class HakiObservationBot(ProbabilityBot):
+class LegacyHakiObservationBot(ProbabilityBot):
     """Случайная защита против команд, совместная концовка и до двух DISTANCE."""
 
     def __init__(self):
@@ -283,3 +283,12 @@ class HakiObservationBot(ProbabilityBot):
         if kind == "DISTANCE":
             return model.Action("USE_BONUS", cell=model.Cell(*cell), bonus="DISTANCE")
         return model.Action.shoot(model.Cell(*cell))
+
+
+class HakiObservationBot(ProbabilityBonusBot):
+    """Haki identity with the current shared team strategy used by Nagibator.
+
+    Keep the public entrypoint so Haki-only transport, lock and rating guard stay
+    enabled. Legacy experiments above are retained for reproducible comparisons.
+    """
+    own_name = "Хаки Наблюдения"
