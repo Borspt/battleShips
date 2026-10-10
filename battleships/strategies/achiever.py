@@ -1,18 +1,22 @@
-"""AchievementBot: ProbabilityBot, который тратит бонусы на ачивки и перестраивается под правила часа.
+"""AchievementBot: ProbabilityBot с бонусами, которые окупаются в рейтинге, и ачивками по запросу.
 
-Опирается на DOCUMENTS/«Ачивки - стратегия сбора.md», «Бонусы - когда применять…» и таблицу модификаторов.
-Правила каждой партии читаются из rules в MATCH_STARTED/MATCH_SNAPSHOT, ничего не зашито под конкретный час.
+Опирается на DOCUMENTS/«Бонусы - когда применять и окупается ли цена.md», «Ачивки - стратегия сбора.md»
+и таблицу модификаторов. Правила каждой партии читаются из rules в MATCH_STARTED/MATCH_SNAPSHOT.
 
-Порядок в свой ход (первое подходящее):
-  1. SHIELD  «Щит и меч»: у нашего корабля цела одна клетка, щита нет.
-  2. MINE    «Сапёр» (≥2 подрыва за партию): три мины в первые ходы, подальше от своего флота.
-  3. SALVO   «Залп-убийца» (≥2 потопления за залп): у соперника осталось ровно 2 корабля, недобитых нет.
-  4. DISTANCE в концовке — «Блицкриг» (≤45 выстрелов) и «Снайпер»; лимит 3.
-  5. Выстрел по карте вероятностей (общая основа ProbabilityBot).
+Цена бонуса списывается с нас при любом исходе и уходит сопернику. При K = 20 бонус ценой C окупается,
+только если поднимает шанс победы на C/K (5 п. п. за очко). Отсюда политика по умолчанию — та же, что у
+лидеров таблицы (реплеи 954 рейтинговых партий 10.10, 15:30–16:10):
+  - DISTANCE ×2 в концовке (≤ 2 корабля у соперника), в том числе в «Шрёдингере». Экономит ~5 промахов
+    на флот за 2 очка. У тройки лидеров — 1,8 запроса за партию на ~17-м попадании.
+  - MINE — только в «Трёх мушкетёрах» (там подрыв сжигает многовыстрельный ход), не больше двух.
+  - SHIELD, SALVO, SONAR — никогда: лидеры их не берут, в наших партиях они стоили −6…−9 очков.
 
-Каждый бонус стоит рейтинга и уменьшает «Высоту». Модуль отключается переменной окружения
-ACHIEVER_SKIP=SHIELD,MINE,SALVO,DISTANCE (через запятую) — например, когда ачивка уже получена.
-Ставки «Казино» не делаются: оболочка их пропускает.
+Ачивки включаются явно: ACHIEVER_FOR=SHIELD,MINE,SALVO,BLITZ (через запятую). Тогда, как раньше:
+  SHIELD «Щит и меч» — щит, когда у нашего корабля цела одна клетка;
+  MINE   «Сапёр» — три мины в первые ходы в любом режиме со своим флотом;
+  SALVO  «Залп-убийца» — залп, когда у соперника ровно 2 корабля и недобитых нет;
+  BLITZ  «Блицкриг» — DISTANCE ×3 в концовке, даже при уверенном лидерстве.
+ACHIEVER_SKIP=DISTANCE,MINE,... запрещает бонус совсем. Ставки «Казино» не делаются.
 
 Запуск: python -m battleships --strategy battleships.strategies.achiever:AchievementBot --allow-bonuses --mode RANKING
 """
@@ -49,15 +53,24 @@ def _components(cells: set[model.Cell]) -> list[set[model.Cell]]:
     return groups
 
 
+def _env_set(name: str) -> set[str]:
+    return {x.strip().upper() for x in os.environ.get(name, "").split(",") if x.strip()}
+
+
 class AchievementBot(ProbabilityBonusBot):
-    max_distance_queries = 3  # «Блицкриг»: DISTANCE ×3 в концовке поднимает шанс с 8% до 29%
-    safe_lead = 1.01  # ради «Блицкрига» запросы в концовке тратим, даже когда уверенно ведём
-    max_mines = 3
-    mine_modifiers = frozenset()  # переопределено в _mine_cell: мины во всех режимах со своим флотом
+    # Значения для рейтинга; ачивки из ACHIEVER_FOR переопределяют их в __init__.
+    max_distance_queries = 2  # третий запрос экономит меньше промаха — не окупает очко
+    max_mines = 2
+    mine_modifiers = frozenset({"THREE_MUSKETEERS"})
 
     def __init__(self):
         super().__init__()
-        self.skip = {x.strip().upper() for x in os.environ.get("ACHIEVER_SKIP", "").split(",") if x.strip()}
+        self.skip = _env_set("ACHIEVER_SKIP")
+        self.hunt = _env_set("ACHIEVER_FOR")
+        if "BLITZ" in self.hunt:  # «Блицкриг»: DISTANCE ×3, даже когда уверенно ведём
+            self.max_distance_queries, self.safe_lead = 3, 1.01
+        if "MINE" in self.hunt:  # «Сапёр»: три мины в любом режиме со своим флотом
+            self.max_mines = 3
 
     # ---- выбор действия -------------------------------------------------------------------------
 
@@ -74,10 +87,14 @@ class AchievementBot(ProbabilityBonusBot):
     def _available(self, state: model.GameState, bonus: str) -> bool:
         return bonus not in self.skip and state.bonuses.get(bonus, 0) > 0
 
+    def _hunting(self, state: model.GameState, bonus: str) -> bool:
+        """Бонус, который тратится только ради ачивки: включён в ACHIEVER_FOR и есть в запасе."""
+        return bonus in self.hunt and self._available(state, bonus)
+
     # ---- «Щит и меч» ------------------------------------------------------------------------------
 
     def _shield(self, state: model.GameState) -> model.Action | None:
-        if (not self._available(state, "SHIELD") or state.shield_active or not state.ships
+        if (not self._hunting(state, "SHIELD") or state.shield_active or not state.ships
                 or state.rules.modifier in NO_OWN_SIDE):
             return None
         hit = {cell for cell, result in state.opponent_shots if result in ("HIT", "SUNK")}
@@ -96,7 +113,9 @@ class AchievementBot(ProbabilityBonusBot):
         return model.Action("USE_BONUS", cell=cell, bonus="MINE") if cell is not None else None
 
     def _mine_cell(self, state: model.GameState) -> model.Cell | None:
-        # Родительская логика выбора клетки, но без ограничения «только в Трёх мушкетёрах».
+        if "MINE" not in self.hunt:  # для рейтинга — родительское правило: только «Три мушкетёра»
+            return super()._mine_cell(state)
+        # «Сапёр»: та же логика выбора клетки, но в любом режиме со своим флотом.
         saved = self.mine_modifiers
         self.mine_modifiers = frozenset({state.rules.modifier})
         try:
@@ -108,7 +127,7 @@ class AchievementBot(ProbabilityBonusBot):
 
     def _salvo(self, state: model.GameState) -> model.Action | None:
         rules = state.rules
-        if not self._available(state, "SALVO") or rules.modifier == "SCHRODINGER_SHIP":
+        if not self._hunting(state, "SALVO") or rules.modifier == "SCHRODINGER_SHIP":
             return None  # без SUNK потопления в залпе не посчитать
         # Залп возвращает полный ход. В «Трёх мушкетёрах» выгоднее всего, когда в ходе остался 1 выстрел.
         if rules.shots_per_turn > 1 and state.shots_left_in_turn > 1:

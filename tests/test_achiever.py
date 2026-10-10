@@ -36,13 +36,24 @@ def new_bot(seed=0):
     return bot
 
 
+def hunter(achievements):
+    import os
+    from unittest import mock
+    with mock.patch.dict(os.environ, {"ACHIEVER_FOR": achievements}):
+        return new_bot()
+
+
 class AchievementBotTest(unittest.TestCase):
-    def test_full_games_every_action_valid_in_every_mode(self):
+    def play_all_modes(self, env=None):
+        """Полные партии во всех режимах: (какие бонусы где применены, самый долгий ход)."""
+        import os
+        from unittest import mock
         used = {}
         slowest = 0.0
         for modifier in MODES:
             for seed in range(12):
-                bot = new_bot(seed)
+                with mock.patch.dict(os.environ, env or {}):
+                    bot = new_bot(seed)
                 state = state_for(modifier, bot)
                 target = Board([[(c.row, c.column) for c in s] for s in bot.place_ships(state.rules)])
                 own = Board([[(c.row, c.column) for c in s] for s in state.ships])
@@ -89,6 +100,20 @@ class AchievementBotTest(unittest.TestCase):
                                 res = "DEFENDED"
                             state.opponent_shots.append((cell, res))
                 self.assertTrue(target.destroyed or state.shots_left == 0, f"{modifier} {seed}")
+        return used, slowest
+
+    def test_rating_policy_spends_only_paying_bonuses(self):
+        used, slowest = self.play_all_modes()
+        self.assertLess(slowest, 0.12, f"самый долгий ход {slowest:.3f} с")
+        for modifier in ("OLD_SCHOOL", "HUNGER_GAMES"):
+            self.assertFalse(any(m == modifier for m, _ in used), used)
+        self.assertFalse(any(b in ("SHIELD", "SALVO", "SONAR") for _, b in used), used)
+        self.assertEqual({m for m, b in used if b == "MINE"}, {"THREE_MUSKETEERS"}, used)
+        self.assertTrue(used.get(("SCHRODINGER_SHIP", "DISTANCE")), used)  # раньше в «Шрёдингере» не спрашивал
+        self.assertTrue(used.get((None, "DISTANCE")), used)
+
+    def test_achievement_hunting_on_request(self):
+        used, slowest = self.play_all_modes({"ACHIEVER_FOR": "SHIELD,MINE,SALVO,BLITZ"})
         self.assertLess(slowest, 0.12, f"самый долгий ход {slowest:.3f} с")
         for modifier in ("OLD_SCHOOL", "HUNGER_GAMES"):
             self.assertFalse(any(m == modifier for m, _ in used), used)
@@ -96,8 +121,15 @@ class AchievementBotTest(unittest.TestCase):
         self.assertTrue(used.get((None, "MINE")), used)
         self.assertTrue(any(b == "SHIELD" for _, b in used), used)
 
-    def test_shield_when_one_cell_left_on_a_ship(self):
+    def test_no_shield_for_rating(self):
         bot = new_bot()
+        state = state_for(None, bot)
+        ship = next(s for s in state.ships if len(s) == 4)
+        state.opponent_shots = [(c, "HIT") for c in ship[:3]]
+        self.assertEqual(bot.choose_action(state, 150).type, "SHOOT")
+
+    def test_shield_when_one_cell_left_on_a_ship(self):
+        bot = hunter("SHIELD")
         state = state_for(None, bot)
         state.bonuses["MINE"] = 0
         ship = next(s for s in state.ships if len(s) == 4)
@@ -108,7 +140,7 @@ class AchievementBotTest(unittest.TestCase):
         self.assertNotEqual(bot.choose_action(state, 150).bonus, "SHIELD")
 
     def test_salvo_when_two_ships_left_and_nothing_wounded(self):
-        bot = new_bot()
+        bot = hunter("SALVO")
         state = state_for("THREE_MUSKETEERS", bot)
         state.bonuses["MINE"] = 0
         fleet = [s for s in bot.place_ships(state.rules)]

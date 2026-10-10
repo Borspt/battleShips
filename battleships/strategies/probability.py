@@ -63,8 +63,13 @@ class ProbabilityStrategy(Strategy):
         return to_cell(self.rng.choice(choices), self.rules.columns)
 
     def next_action(self) -> tuple[str, Cell]:
-        """("SHOOT", клетка) или ("DISTANCE", клетка запроса). Запрос — только в концовке без недобитых."""
-        if self.distance_uses > 0 and not self.hits and not self.known_ship and self.rules.announces_sunk:
+        """("SHOOT", клетка) или ("DISTANCE", клетка запроса). Запрос — только в концовке.
+
+        С объявлением потопления — только без недобитых. В «Корабле Шрёдингера» недобитые группы бывают
+        и у потопленных кораблей, поэтому запрос разрешён и при них: перебор учитывает обе гипотезы.
+        """
+        if (self.distance_uses > 0 and not self.known_ship
+                and (not self.hits or not self.rules.announces_sunk)):
             configs = self._endgame_configs()
             if configs and len(configs) > 1:
                 index, information = self._best_query(configs)
@@ -137,10 +142,15 @@ class ProbabilityStrategy(Strategy):
         blocked, hits, touching = self.empty | self.sunk, self.hits, not self.rules.no_touching
         # Ответ DISTANCE мог относиться к кораблю, который с тех пор потоплен: если его клетка лежит
         # ровно на этом расстоянии, требовать такую же клетку от оставшихся кораблей нельзя.
+        # Платформа считает все клетки непотопленных кораблей, подбитые тоже (сверено по 57 запросам
+        # в «Шрёдингере»), а потопленные корабли не считает. Без объявления потопления целиком подбитая
+        # группа может оказаться потопленным кораблём, поэтому её клетки тоже «объясняют» ответ.
+        announced = self.rules.announces_sunk
+        settled = self.sunk if announced else self.sunk | hits
         checks = []
         for query, distance in self.distances:
             row, column = divmod(query, columns)
-            explained = any(abs(row - i // columns) + abs(column - i % columns) == distance for i in bits(self.sunk))
+            explained = any(abs(row - i // columns) + abs(column - i % columns) == distance for i in bits(settled))
             checks.append((query, distance, explained))
 
         lengths = sorted(self.remaining, reverse=True)
@@ -152,8 +162,9 @@ class ProbabilityStrategy(Strategy):
                 for number, (mask, around, _) in enumerate(placements(rows, columns, length))
                 if not mask & blocked
                 and (touching or not around & hits)
-                and (mask & hits != mask or not self.rules.announces_sunk)
-                and all(distances[number][query] >= distance for query, distance, _ in checks)
+                and (mask & hits != mask or not announced)
+                # целиком подбитое положение — потопленный корабль, его платформа в ответе не учитывает
+                and (mask & hits == mask or all(distances[number][query] >= distance for query, distance, _ in checks))
             ]
 
         configs, nodes = [], 0
@@ -164,8 +175,7 @@ class ProbabilityStrategy(Strategy):
                 if hits & ~occupied:  # все недобитые попадания должны принадлежать оставшимся кораблям
                     return True
                 for query, distance, explained in checks:
-                    if not explained and min(placement_distances(rows, columns, length)[number][query]
-                                             for length, number in chosen) != distance:
+                    if not explained and self._answer(chosen, query) != distance:
                         return True
                 configs.append((occupied, weight, chosen))
                 return True
@@ -197,18 +207,30 @@ class ProbabilityStrategy(Strategy):
         """Клетка, ответ DISTANCE в которой сильнее всего сокращает число расстановок, и его энтропия в битах."""
         rows, columns = self.rules.rows, self.rules.columns
         sample = configs if len(configs) <= QUERY_SAMPLE else self.rng.sample(configs, QUERY_SAMPLE)
-        tables = [[placement_distances(rows, columns, length)[number] for length, number in chosen] for _, _, chosen in sample]
+        tables = [[placement_distances(rows, columns, length)[number] for length, number in chosen
+                   if not self._settled(length, number)] for _, _, chosen in sample]
         total = sum(weight for _, weight, _ in sample)
         best_index, best_information = 0, -1.0
         for query in range(self.size):
             answers: dict[int, float] = {}
             for (_, weight, _), table in zip(sample, tables):
-                distance = min(distances[query] for distances in table)
+                distance = min((distances[query] for distances in table), default=-1)
                 answers[distance] = answers.get(distance, 0.0) + weight
             information = -sum(w / total * math.log2(w / total) for w in answers.values())
             if information > best_information:
                 best_index, best_information = query, information
         return best_index, best_information
+
+    def _settled(self, length: int, number: int) -> bool:
+        """Положение целиком подбито — значит, это потопленный корабль (в «Шрёдингере» это не объявляется)."""
+        mask = placements(self.rules.rows, self.rules.columns, length)[number][0]
+        return mask & self.hits == mask
+
+    def _answer(self, chosen: tuple, query: int) -> int:
+        """Какой ответ DISTANCE дала бы платформа сейчас при этой расстановке оставшихся кораблей."""
+        rows, columns = self.rules.rows, self.rules.columns
+        return min((placement_distances(rows, columns, length)[number][query]
+                    for length, number in chosen if not self._settled(length, number)), default=-1)
 
     def _priors(self, length: int):
         bias = self.edge_bias
