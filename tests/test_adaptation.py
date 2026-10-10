@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from battleships.model import OpponentInfo
-from battleships.placement import edge_placement, interior_placement, random_placement
+from battleships.placement import edge_placement, interior_placement, random_placement, validate_placement
 from battleships.strategies.adaptation import MEDIUM_BIAS, ProfileBook, choose_plan
 from battleships.strategies.probability import HARD_BIAS
 
@@ -57,6 +57,24 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertIn("однопалубных у края", plan.reason)
         for share in (0.47, 0.55):  # случайная расстановка и рядом с ней — без поправки
             self.assertIsNone(choose_plan(None, REMOTE, profile(vsBots=versus_bots(singlesOnBorderShare=share))).edge_bias)
+
+    def test_hunger_games_fleet_hides_from_opponents_first_shots(self):
+        import random
+        from battleships.rules import Rules
+        left = {f"{row},{column}": 0.9 for row in range(10) for column in range(5)}  # бьёт только в левую половину
+        recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.3, "singlesOnBorderShare": 0.4, "earlyCells": left}
+        plan = choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent))
+        self.assertIn("спрятан", plan.reason)
+        self.assertEqual(plan.placement.__name__, "evasive_placement")
+        rules, rng = Rules.for_modifier("HUNGER_GAMES"), random.Random(1)
+        for _ in range(5):
+            ships = plan.placement(rules, rng)
+            self.assertIsNone(validate_placement(rules, ships))
+            self.assertLessEqual(sum(column < 5 for ship in ships for _, column in ship), 9)  # в среднем при случайной — 10
+        self.assertEqual(choose_plan("HUNGER_GAMES", REMOTE, None).placement, random_placement)  # данных нет совсем
+        typical = choose_plan("HUNGER_GAMES", REMOTE, None, {"4,4": 0.5})
+        self.assertIn("ботов в среднем", typical.reason)
+        self.assertEqual(choose_plan(None, REMOTE, profile(recent=recent)).placement, random_placement)  # другие режимы
 
     def test_recent_games_override_whole_day_and_games_with_us_override_both(self):
         day = versus_bots(longShipsOnBorder=0.31)

@@ -42,6 +42,7 @@ STORE = Path("runtime/scouting")  # реплеи и лидерборд, лока
 PROFILES = Path("scouting/profiles.json")  # профили, в репозитории
 DOWNLOADS = 4  # одновременных запросов к платформе
 OPENING = 15  # сколько первых выстрелов партии считаем «дебютом» стрелка
+EARLY = 20  # столько выстрелов у игрока в «Голодных играх»: куда бот бьёт первыми, там флот не ставим
 RECENT = 25  # сколько последних партий против ботов команд идёт в раздел recent профиля
 RECENT_VS_US = 10  # и сколько последних партий против нашей команды — в recentVsUs
 
@@ -216,6 +217,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
                     "singles": len(singles), "singlesBorder": sum(on_border(cell) for cell in singles),
                     "opening": len(own[:OPENING]), "openingBorder": sum(on_border(e["cell"]) for e in own[:OPENING]),
                     "shotCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own},
+                    "earlyCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own[:EARLY]},
                 })
 
     leaderboard = store / "leaderboard.json"
@@ -232,6 +234,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
     def window(games: list) -> dict:
         """Привычки бота по последним партиям: соперники меняют игру в течение дня и под нас лично."""
         cells = Counter(cell for game in games for cell in game["shotCells"])
+        early = Counter(cell for game in games for cell in game["earlyCells"])
         return {
             "matches": len(games), "placements": sum(game["placed"] for game in games),
             "since": games[0]["at"] if games else None,
@@ -241,6 +244,8 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
             "openingOnBorder": share(sum(g["openingBorder"] for g in games), sum(g["opening"] for g in games)),
             # Доля партий, в которых бот хоть раз выстрелил в клетку: по ней ставятся мины.
             "shotCells": {cell: round(count / len(games), 2) for cell, count in cells.most_common()},
+            # Доля партий, в которых клетка попала в первые EARLY выстрелов бота: по ней прячем флот в «Голодных играх».
+            "earlyCells": {cell: round(count / len(games), 2) for cell, count in early.most_common()},
         }
 
     for key, profile in profiles.items():

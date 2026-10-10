@@ -50,7 +50,8 @@ class ProbabilityBot:
         self.book = ProfileBook()
 
     def plan(self, state: model.GameState) -> Plan:
-        return choose_plan(state.rules.modifier, state.opponent_info, self.book.lookup(state.opponent_info))
+        typical = self.book.typical_early() if state.rules.modifier == "HUNGER_GAMES" else None
+        return choose_plan(state.rules.modifier, state.opponent_info, self.book.lookup(state.opponent_info), typical)
 
     def place_ships(self, rules: model.Rules) -> list[list[model.Cell]]:
         """Расстановка, когда соперник неизвестен."""
@@ -182,6 +183,8 @@ class ProbabilityBonusBot(ProbabilityBot):
 
     def _distance_budget(self, state: model.GameState, used: int) -> int:
         if state.shots_left <= 1:  # запрос списывает выстрел из лимита: последний оставляем на выстрел
+            return 0
+        if state.rules.modifier == "HUNGER_GAMES":  # выстрелов мало, а запрос стоит выстрела: считаются попадания
             return 0
         if self._weak_opponent(state):
             return 0
