@@ -129,3 +129,6 @@ def choose_action(self, state: GameState, time_budget_ms: int) -> Action: ...
 
 - [Правила и протокол платформы](https://hackathon.no-offence.ru/documentation), изучены 10.10.2026.
 - [Текущие правила](https://hackathon.no-offence.ru/rules); параметры конкретного боя берём из `MATCH_STARTED`.
+
+
+В 14:00 включится режим "Дуэль", ход будет переходить после любого выстрела, даже после попадания
