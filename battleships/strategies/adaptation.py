@@ -23,6 +23,14 @@ MIN_MATCHES = 5
 # При случайной расстановке у края 47% однопалубных. На 164 расстановках «Низких ожиданий» (73% у края)
 # поправка экономит 2,3 выстрела, против случайной расстановки она же стоит 2,5 — поэтому порог высокий.
 SINGLES_SHARE = 0.6
+# «Голодные игры»: у бота с любимыми местами бьём туда, где его флот стоял в последних партиях. На реплеях
+# при разбросе от 0,095 это 8,1 попадания за 20 выстрелов вместо 6,5; у случайной расстановки — шум и минус.
+FLEET_SPREAD = 0.095
+MIN_FLEET_PLACEMENTS = 20
+# Карта годится, только если она предсказывала последние расстановки бота. Боты, которые видят наши выстрелы
+# в реплеях, уходят с прежних мест: против «Забудь весь контекст» карта давала 0–5 попаданий, 1 победа из 9.
+FLEET_LIFT = 1.15
+FLEET_SMOOTHING = 0.1
 
 
 @dataclass(frozen=True)
@@ -30,6 +38,7 @@ class Plan:
     placement: Callable
     edge_bias: EdgeBias | None
     reason: str
+    cell_prior: tuple[float, ...] | None = None  # вес каждой клетки поля в стрельбе: где соперник ставит флот
 
 
 def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_early: dict | None = None) -> Plan:
@@ -39,7 +48,7 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
     (profile["vsBots"]): против встроенного HARD многие играют иначе. Рейтинг соперника
     на выбор пока не влияет: связи между рейтингом и привычками в данных не видно.
     """
-    placement, bias, reasons = random_placement, None, []
+    placement, bias, reasons, cell_prior = random_placement, None, [], None
     versus_bots = (profile or {}).get("vsBots") or {}
 
     # Поправка в стрельбе — по расстановкам против ботов команд, и чем свежее, тем важнее: сначала
@@ -115,13 +124,21 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
             origin = "соперника в дебюте за день"
         if not early and typical_early:
             early, origin = typical_early, "ботов в среднем"
+        recent = (profile or {}).get("recent") or {}
+        if (recent.get("placements", 0) >= MIN_FLEET_PLACEMENTS and (recent.get("fleetSpread") or 0.0) >= FLEET_SPREAD
+                and (recent.get("fleetLift") or 0.0) >= FLEET_LIFT):
+            occupied = recent.get("fleetCells") or {}
+            cell_prior = tuple((occupied.get(f"{row},{column}", 0.0) + FLEET_SMOOTHING) / (0.2 + FLEET_SMOOTHING)
+                               for row in range(10) for column in range(10))
+            bias = None  # карта клеток точнее поправки на края и заменяет её
+            reasons.append(f"стрельба по карте его расстановок (разброс {recent['fleetSpread']:.3f})")
         if early:
             danger = {tuple(int(part) for part in cell.split(",")): share for cell, share in early.items()}
             placement = partial(evasive_placement, danger=danger)
             placement.__name__ = "evasive_placement"
             reasons.append(f"флот спрятан от первых выстрелов {origin}")
 
-    return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно")
+    return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно", cell_prior)
 
 
 class ProfileBook:

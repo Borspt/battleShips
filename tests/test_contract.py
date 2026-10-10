@@ -4,6 +4,7 @@ import random
 import unittest
 
 import json
+import os
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -103,6 +104,20 @@ class ProbabilityBotTest(unittest.TestCase):
             with mock.patch.object(contract, "PLAN_LOG", Path(blocker.name) / "logs" / "plans.jsonl"):
                 state = state_for()
                 self.assertTrue(valid_placement(ProbabilityBot().place_ships_for_match(state), state.rules))
+
+    def setUp(self):
+        # Механику запросов проверяем при прежней цене в 1 очко: при ней окупается один запрос за партию.
+        patcher = mock.patch.object(ProbabilityBonusBot, "distance_price", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_distance_is_spent_only_while_a_query_is_worth_its_price(self):
+        bot = ProbabilityBonusBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        self.assertEqual(bot.choose_action(self.endgame_state(), 150).type, "USE_BONUS")
+        for price, queries in ((2, 0), (1, 1), (0.5, 2)):
+            with mock.patch.object(ProbabilityBonusBot, "distance_price", price):
+                self.assertEqual(bot._distance_budget(self.endgame_state(), 0), queries, price)
 
     def endgame_state(self, opponent_hits=15):
         """Поле соперника обстреляно так, что остались два однопалубных в двух несвязанных зонах."""
@@ -294,12 +309,14 @@ class ProbabilityBotTest(unittest.TestCase):
 class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
     async def test_bonus_bot_answers_within_shell_budget(self):
         worker = StrategyWorker("battleships.strategies.contract:ProbabilityBonusBot")
+        os.environ["BATTLESHIPS_DISTANCE_PRICE"] = "1"  # рабочий процесс читает цену из окружения
         try:
             await worker.start()
             state = ProbabilityBotTest().endgame_state()
             action = await worker.call("choose_action", (state, 150), 0.15)
             self.assertEqual((action.type, action.bonus), ("USE_BONUS", "DISTANCE"))
         finally:
+            os.environ.pop("BATTLESHIPS_DISTANCE_PRICE", None)
             await worker.close()
 
     async def test_runs_in_shell_worker_process(self):
@@ -317,3 +334,27 @@ class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HungerGamesMixtureTest(unittest.TestCase):
+    def test_misses_in_the_middle_move_shooting_to_the_edges(self):
+        import random
+        from battleships.rules import Rules
+        from battleships.strategies.hunger import EdgeMixture
+        rules = Rules(modifier="HUNGER_GAMES", shot_limit=20)
+        mixture = EdgeMixture(rules, random.Random(1))
+        start = mixture.p_edge
+        for cell in [(4, 4), (5, 5), (3, 5), (5, 3), (4, 6), (6, 4)]:
+            mixture.on_shot_result(cell, "MISS")
+        self.assertGreater(mixture.p_edge, start)
+        mixture.on_shot_result((2, 2), "HIT")
+        self.assertIn(mixture.next_shot(), {(1, 2), (3, 2), (2, 1), (2, 3)})  # добивание прежде всего
+
+    def test_bot_uses_mixture_in_hunger_games(self):
+        bot = ProbabilityBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        state = state_for("HUNGER_GAMES")
+        state.shots = [(Cell(4, 4), "MISS"), (Cell(5, 5), "MISS")]
+        action = bot.choose_action(state, 150)
+        self.assertEqual(action.type, "SHOOT")
+        self.assertTrue(valid_action(action, state))

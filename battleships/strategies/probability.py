@@ -41,7 +41,8 @@ HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
 
 class ProbabilityStrategy(Strategy):
     def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0,
-                 spread: float = 0.0, sunk_checks: bool = False, endgame_ships: int = ENDGAME_SHIPS, **kwargs):
+                 spread: float = 0.0, sunk_checks: bool = False, endgame_ships: int = ENDGAME_SHIPS,
+                 cell_prior: tuple[float, ...] | None = None, **kwargs):
         super().__init__(rules, rng, **kwargs)
         # «Шрёдингер»: тратить ли DISTANCE на вопрос «потоплен ли корабль» по подбитой клетке.
         self.sunk_checks = sunk_checks
@@ -53,6 +54,9 @@ class ProbabilityStrategy(Strategy):
         self.distances: list[tuple[int, int]] = []  # ответы DISTANCE: (индекс клетки, расстояние)
         self.confirmed_alive = 0  # «Шрёдингер»: группы попаданий, про которые DISTANCE ответил «корабль жив»
         self.edge_bias = edge_bias
+        # Вес каждой клетки поля: положение корабля весит как произведение весов его клеток.
+        self.cell_prior = cell_prior
+        self._cell_priors: dict[int, list[float]] = {}
         self.size = rules.rows * rules.columns
         self.side, self.diagonal = neighbour_masks(rules.rows, rules.columns)
         self.remaining = list(rules.fleet)  # длины ещё не потопленных кораблей
@@ -287,6 +291,11 @@ class ProbabilityStrategy(Strategy):
         return best_index, best_information
 
     def _priors(self, length: int):
+        if self.cell_prior is not None and len(self.cell_prior) == self.size:
+            if length not in self._cell_priors:
+                self._cell_priors[length] = [math.prod(self.cell_prior[index] for index in cells)
+                                             for _, _, cells in placements(self.rules.rows, self.rules.columns, length)]
+            return self._cell_priors[length]
         bias = self.edge_bias
         if bias is None:
             return None

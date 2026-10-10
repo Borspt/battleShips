@@ -18,6 +18,7 @@ from ..placement import random_placement
 from ..rules import Rules
 from .adaptation import Plan, ProfileBook, choose_plan
 from .probability import ProbabilityStrategy
+from .hunger import EdgeMixture
 
 
 def core_rules(rules: model.Rules) -> Rules:
@@ -66,8 +67,15 @@ class ProbabilityBot:
         plan = self.plan(state)
         if state.ships is None and not state.shots:  # «Спидран»: расстановки нет, партия начинается с выстрела
             self._record(state, plan, placed=False)
+        if state.rules.modifier == "HUNGER_GAMES" and plan.cell_prior is None:
+            # Профили отстают от того, как соперники ставят флот в этом режиме: решаем по ходу партии.
+            mixture = EdgeMixture(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias)
+            for cell, result in state.shots:
+                mixture.on_shot_result((cell.row, cell.column), result)
+            row, column = mixture.next_shot()
+            return model.Action.shoot(model.Cell(row, column))
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
-                                      spread=self._spread(state), sunk_checks=True)
+                                      spread=self._spread(state), sunk_checks=True, cell_prior=plan.cell_prior)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
@@ -110,6 +118,7 @@ class ProbabilityBot:
             "modifier": state.rules.modifier,
             "placement": plan.placement.__name__ if placed else None,
             "edgeBias": asdict(plan.edge_bias) if plan.edge_bias else None,
+            "cellPrior": plan.cell_prior is not None,
             "reason": plan.reason,
         }
         try:
@@ -128,7 +137,13 @@ class ProbabilityBonusBot(ProbabilityBot):
     Без флага --allow-bonuses оболочка отклонит бонус и подставит запасной выстрел.
     """
 
-    max_distance_queries = 2  # третий запрос даёт 2–4 п. п. к победе и окупается только при K = 40
+    # Цена запроса DISTANCE в очках рейтинга: с 17:30 10.10 — 2 (было 1). В MATCH_STARTED цены не приходят,
+    # смотреть GET /api/v1/rules; сменить без правки кода — переменная BATTLESHIPS_DISTANCE_PRICE при запуске.
+    distance_price = float(os.environ.get("BATTLESHIPS_DISTANCE_PRICE", "2"))
+    # Сколько очков рейтинга приносит первый, второй и третий запрос за партию при K = 20. В симуляторе против
+    # такого же бота без бонусов это +13, +8 и +4 п. п. к победе (2,7, 1,6 и 0,8 очка); на платформе два запроса
+    # в «Дуэли» дали +7 п. п. вместо +21, поэтому берём половину. Запрос тратится, пока он дороже своей цены.
+    distance_worth = (1.35, 0.8, 0.4)
     # Сработавшая мина сжигает сопернику остаток хода и весь следующий. В «Трёх мушкетёрах» это около
     # четырёх промахов (+14 п. п. к победе) за 1 очко; в остальных режимах — один выстрел, в минус.
     mine_modifiers = frozenset({"THREE_MUSKETEERS"})
@@ -197,6 +212,5 @@ class ProbabilityBonusBot(ProbabilityBot):
             lost = len({cell for cell, result in state.opponent_shots if result in ("HIT", "SUNK")})
             if scored - lost >= self.safe_lead:
                 return 0
-        # В «Шрёдингере» запрос отвечает, потоплен ли корабль, и стоит своей цены все три раза.
-        limit = 3 if state.rules.modifier == "SCHRODINGER_SHIP" else self.max_distance_queries
+        limit = sum(worth >= self.distance_price for worth in self.distance_worth)
         return max(0, min(state.bonuses.get("DISTANCE", 0), limit - used))

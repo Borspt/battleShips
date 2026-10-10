@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import http.cookiejar
 import json
+import statistics
 import os
 import ssl
 import time
@@ -218,6 +219,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
                     "opening": len(own[:OPENING]), "openingBorder": sum(on_border(e["cell"]) for e in own[:OPENING]),
                     "shotCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own},
                     "earlyCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own[:EARLY]},
+                    "fleetCells": {f"{c['row']},{c['column']}" for ship in placed or [] for c in ship["cells"]},
                 })
 
     leaderboard = store / "leaderboard.json"
@@ -231,10 +233,27 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
 
     share = lambda part, whole: round(part / whole, 3) if whole else None
 
+    def fleet_lift(games: list, last: int = 8) -> float | None:
+        """Насколько карта прошлых расстановок бота предсказывает его следующую: 1 — никак, меньше 1 — он уходит
+        с прежних мест. Для каждой из последних партий карта строится только по партиям до неё."""
+        placed = [game for game in games if game["placed"]]
+        scores = []
+        for number in range(max(10, len(placed) - last), len(placed)):
+            train = placed[max(0, number - RECENT):number]
+            seen = Counter(cell for game in train for cell in game["fleetCells"])
+            mean = sum(seen.values()) / 100
+            cells = placed[number]["fleetCells"]
+            if mean and cells:
+                scores.append(sum(seen.get(cell, 0) for cell in cells) / len(cells) / mean)
+        return round(sum(scores) / len(scores), 3) if len(scores) >= 5 else None
+
     def window(games: list) -> dict:
         """Привычки бота по последним партиям: соперники меняют игру в течение дня и под нас лично."""
         cells = Counter(cell for game in games for cell in game["shotCells"])
         early = Counter(cell for game in games for cell in game["earlyCells"])
+        fleet = Counter(cell for game in games for cell in game["fleetCells"])
+        placed = sum(game["placed"] for game in games)
+        occupied = [fleet.get(f"{row},{column}", 0) / placed for row in range(10) for column in range(10)] if placed else []
         return {
             "matches": len(games), "placements": sum(game["placed"] for game in games),
             "since": games[0]["at"] if games else None,
@@ -246,11 +265,16 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
             "shotCells": {cell: round(count / len(games), 2) for cell, count in cells.most_common()},
             # Доля партий, в которых клетка попала в первые EARLY выстрелов бота: по ней прячем флот в «Голодных играх».
             "earlyCells": {cell: round(count / len(games), 2) for cell, count in early.most_common()},
+            # Доля расстановок, в которых клетка занята кораблём, и разброс этой доли по полю: у случайной
+            # расстановки на 25 партиях разброс около 0,08, у бота с любимыми местами — от 0,10.
+            "fleetCells": {cell: round(count / placed, 2) for cell, count in fleet.most_common()} if placed else {},
+            "fleetSpread": round(statistics.pstdev(occupied), 3) if occupied else None,
         }
 
     for key, profile in profiles.items():
         games = sorted(history.get(key, []), key=lambda game: game["at"])
         profile["recent"] = window(games[-RECENT:])
+        profile["recent"]["fleetLift"] = fleet_lift(games)
         profile["recentVsUs"] = window([game for game in games if game["vsUs"]][-RECENT_VS_US:])
         destroy = profile.pop("shotsToDestroy")
         profile["uniquePlacements"] = len(profile["uniquePlacements"])
