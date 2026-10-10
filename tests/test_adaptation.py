@@ -1,0 +1,91 @@
+"""Выбор расстановки и поправки по профилю соперника."""
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from battleships.model import OpponentInfo
+from battleships.placement import edge_placement, interior_placement, random_placement
+from battleships.strategies.adaptation import MEDIUM_BIAS, ProfileBook, choose_plan
+from battleships.strategies.probability import HARD_BIAS
+
+REMOTE = OpponentInfo(key="bot:a", bot_id="a")
+
+
+def profile(**values):
+    return {"placements": 30, "matches": 30, "longShipsOnBorder": 0.35, "singlesOnBorderShare": 0.4,
+            "openingOnBorder": 0.4} | values
+
+
+def versus_bots(**values):
+    return {"matches": 12, "placements": 12, "longShipsOnBorder": 0.3, "singlesOnBorderShare": 0.4,
+            "openingOnBorder": 0.4} | values
+
+
+class ChoosePlanTest(unittest.TestCase):
+    def test_unknown_opponent_gets_neutral_plan(self):
+        plan = choose_plan(None, REMOTE, None)
+        self.assertEqual((plan.placement, plan.edge_bias), (random_placement, None))
+        self.assertEqual(choose_plan(None, OpponentInfo(), None).edge_bias, None)
+
+    def test_opponent_without_habits_gets_neutral_plan(self):
+        plan = choose_plan(None, REMOTE, profile())
+        self.assertEqual((plan.placement, plan.edge_bias), (random_placement, None))
+
+    def test_bias_grows_with_share_of_ships_on_border(self):
+        self.assertEqual(choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.7, singlesOnBorderShare=0.2))).edge_bias, MEDIUM_BIAS)
+        self.assertEqual(choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=1.0, singlesOnBorderShare=0.0))).edge_bias, HARD_BIAS)
+
+    def test_singles_are_not_pushed_inside_when_opponent_keeps_them_on_border(self):
+        plan = choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.7, singlesOnBorderShare=0.5)))
+        self.assertEqual(plan.edge_bias.single_edge, 1.0)
+
+    def test_fleet_on_border_seen_only_against_built_in_bots_gives_no_bias(self):
+        self.assertIsNone(choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0)).edge_bias)
+        self.assertIsNone(choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0, vsBots=versus_bots(placements=2, longShipsOnBorder=1.0))).edge_bias)
+
+    def test_placement_avoids_where_opponent_shoots_first(self):
+        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=0.05)).placement, edge_placement)
+        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=0.6)).placement, random_placement)
+        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=0.5, vsBots=versus_bots(openingOnBorder=0.95))).placement, interior_placement)
+
+    def test_edge_shooting_seen_only_against_built_in_bots_does_not_move_fleet_inside(self):
+        """Бить с краёв по флоту HARD выгодно всем; это не значит, что так же стреляют по нам."""
+        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=1.0)).placement, random_placement)
+        few = versus_bots(matches=2, openingOnBorder=1.0)
+        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=1.0, vsBots=few)).placement, random_placement)
+
+    def test_habits_against_team_bots_override_overall_habits(self):
+        plan = choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0, openingOnBorder=0.05, vsBots=versus_bots(openingOnBorder=0.6)))
+        self.assertEqual((plan.placement, plan.edge_bias), (random_placement, None))
+
+    def test_small_samples_are_ignored(self):
+        small = versus_bots(placements=3, matches=3, longShipsOnBorder=1.0, openingOnBorder=1.0)
+        plan = choose_plan(None, REMOTE, profile(placements=3, matches=3, openingOnBorder=0.0, vsBots=small))
+        self.assertEqual((plan.placement, plan.edge_bias), (random_placement, None))
+
+    def test_fallbacks_without_profile(self):
+        hard = choose_plan(None, OpponentInfo(key="builtin:HARD", built_in_bot="HARD"), None)
+        self.assertEqual((hard.placement, hard.edge_bias), (edge_placement, HARD_BIAS))
+        strong = choose_plan(None, OpponentInfo(key="bot:b", bot_id="b", rating=1600.0), None)
+        self.assertEqual((strong.placement, strong.edge_bias), (random_placement, None))
+        self.assertEqual(choose_plan("SPEEDRUN", REMOTE, None).edge_bias, HARD_BIAS)
+        self.assertEqual(choose_plan("SPEEDRUN", REMOTE, profile()).edge_bias, HARD_BIAS)
+
+
+class ProfileBookTest(unittest.TestCase):
+    def test_reads_profiles_and_survives_missing_or_broken_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profiles.json"
+            book = ProfileBook(path)
+            self.assertIsNone(book.lookup(REMOTE))
+            path.write_text(json.dumps({"bot:a": {"team": "Kraken"}}), encoding="utf-8")
+            self.assertEqual(book.lookup(REMOTE)["team"], "Kraken")
+            path.write_text("{broken", encoding="utf-8")
+            self.assertEqual(book.lookup(REMOTE)["team"], "Kraken")
+            self.assertIsNone(book.lookup(OpponentInfo()))
+
+
+if __name__ == "__main__":
+    unittest.main()

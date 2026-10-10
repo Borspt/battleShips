@@ -115,6 +115,9 @@ def _new_profile(side: dict) -> dict:
         "longCells": 0, "longCellsOnBorder": 0, "singles": 0, "singlesOnBorder": 0,
         "shots": 0, "hits": 0, "openingShots": 0, "openingShotsOnBorder": 0, "openingCells": Counter(),
         "firstShots": Counter(), "shotsToDestroy": [], "lastSeen": None,
+        # То же, но только в партиях против ботов команд: против встроенных боты могут играть иначе.
+        "vsBots": {"matches": 0, "placements": 0, "longCells": 0, "longCellsOnBorder": 0, "singles": 0,
+                   "singlesOnBorder": 0, "openingShots": 0, "openingShotsOnBorder": 0},
     }
 
 
@@ -137,6 +140,8 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
             opponent = next(s for other, s in sides.items() if other != seat)
             profile["team"], profile["botName"] = side.get("name"), side.get("botName") or side.get("builtInBot")
             profile["matches"] += 1
+            buckets = [profile] + ([profile["vsBots"]] if opponent["kind"] == "REMOTE_BOT" else [])
+            profile["vsBots"]["matches"] += len(buckets) - 1
             outcome = "draws" if match.get("winner") is None else "wins" if match["winner"] == seat else "losses"
             profile[outcome] += 1
             if kind == "RANKING":
@@ -155,26 +160,29 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
 
             placed = next((e["ships"] for e in events if e["type"] == "PLACEMENT_ACCEPTED" and e.get("seat") == seat), None)
             if placed:
-                profile["placements"] += 1
+                for bucket in buckets:
+                    bucket["placements"] += 1
                 ships = [[(c["row"], c["column"]) for c in ship["cells"]] for ship in placed]
                 profile["uniquePlacements"].add(json.dumps(sorted(sorted(ship) for ship in ships)))
                 for ship in placed:
                     for cell in ship["cells"]:
                         profile["placementCells"][f"{cell['row']},{cell['column']}"] += 1
                     border = sum(on_border(cell) for cell in ship["cells"])
-                    if len(ship["cells"]) == 1:
-                        profile["singles"] += 1
-                        profile["singlesOnBorder"] += border
-                    else:
-                        profile["longCells"] += len(ship["cells"])
-                        profile["longCellsOnBorder"] += border
+                    for bucket in buckets:
+                        if len(ship["cells"]) == 1:
+                            bucket["singles"] += 1
+                            bucket["singlesOnBorder"] += border
+                        else:
+                            bucket["longCells"] += len(ship["cells"])
+                            bucket["longCellsOnBorder"] += border
 
             own = shots[seat]
             profile["shots"] += len(own)
             profile["hits"] += sum(e["result"] in ("HIT", "SUNK") for e in own)
             for event in own[:OPENING]:
-                profile["openingShots"] += 1
-                profile["openingShotsOnBorder"] += on_border(event["cell"])
+                for bucket in buckets:
+                    bucket["openingShots"] += 1
+                    bucket["openingShotsOnBorder"] += on_border(event["cell"])
                 profile["openingCells"][f"{event['cell']['row']},{event['cell']['column']}"] += 1
             if own:
                 profile["firstShots"][f"{own[0]['cell']['row']},{own[0]['cell']['column']}"] += 1
@@ -196,9 +204,10 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
         profile["uniquePlacements"] = len(profile["uniquePlacements"])
         profile["winRate"] = share(profile["wins"], profile["matches"])
         profile["accuracy"] = share(profile["hits"], profile["shots"])
-        profile["longShipsOnBorder"] = share(profile["longCellsOnBorder"], profile["longCells"])
-        profile["singlesOnBorderShare"] = share(profile["singlesOnBorder"], profile["singles"])
-        profile["openingOnBorder"] = share(profile["openingShotsOnBorder"], profile["openingShots"])
+        for bucket in (profile, profile["vsBots"]):
+            bucket["longShipsOnBorder"] = share(bucket["longCellsOnBorder"], bucket["longCells"])
+            bucket["singlesOnBorderShare"] = share(bucket["singlesOnBorder"], bucket["singles"])
+            bucket["openingOnBorder"] = share(bucket["openingShotsOnBorder"], bucket["openingShots"])
         profile["shotsToDestroyMean"] = round(sum(destroy) / len(destroy), 1) if destroy else None
         profile["shotsToDestroyGames"] = len(destroy)
         for counter in ("modifiers", "endReasons", "placementCells", "openingCells", "firstShots"):
@@ -232,8 +241,8 @@ def _percent(value) -> str:
 
 def table(profiles: dict[str, dict]) -> str:
     lines = [
-        "рейтинг  матчей побед% | выстрелов | расстановки: всего разных  длинные  одиночные | дебют    | бот",
-        "                        | до победы |                          у края%   у края% | у края%  |",
+        "рейтинг  матчей побед% | выстрелов | расстановки: всего разных  длинные  одиночные | дебют    | против ботов команд:       | бот",
+        "                        | до победы |                          у края%   у края% | у края%  | матчей длинные% дебют%     |",
     ]
     for p in sorted(profiles.values(), key=lambda p: -(p["rating"] or 0)):
         destroy = f"{p['shotsToDestroyMean']:5.1f}" if p["shotsToDestroyMean"] else "    —"
@@ -241,6 +250,7 @@ def table(profiles: dict[str, dict]) -> str:
         lines.append(
             f"{rating} {p['matches']:7d}   {_percent(p['winRate'])} |     {destroy} | {p['placements']:18d} {p['uniquePlacements']:6d}"
             f"      {_percent(p['longShipsOnBorder'])}       {_percent(p['singlesOnBorderShare'])} |     {_percent(p['openingOnBorder'])}  | "
+            f"{p['vsBots']['matches']:6d}     {_percent(p['vsBots']['longShipsOnBorder'])}    {_percent(p['vsBots']['openingOnBorder'])}     | "
             f"{p['botName']} ({p['team'] or 'встроенный'})"
         )
     return "\n".join(lines)

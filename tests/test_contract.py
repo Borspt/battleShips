@@ -3,8 +3,11 @@
 import random
 import unittest
 
-from battleships.model import Action, Cell, GameState, Rules, valid_action, valid_placement
+from pathlib import Path
+
+from battleships.model import Action, Cell, GameState, OpponentInfo, Rules, valid_action, valid_placement
 from battleships.simulator import Board
+from battleships.strategies.adaptation import ProfileBook
 from battleships.strategies.contract import ProbabilityBot
 from battleships.worker import StrategyWorker
 from tests.fixtures import started
@@ -43,20 +46,30 @@ class ProbabilityBotTest(unittest.TestCase):
                     state.shots.append((action.cell, result))
                     state.shots_left -= 1
 
-    def test_edge_bias_is_used_only_against_hard_and_in_speedrun(self):
+    def test_shooting_and_placement_follow_opponent(self):
+        """Без профилей: HARD — края, «Спидран» — края в стрельбе, остальные — нейтрально, каким бы ни был рейтинг."""
         border = lambda cell: cell.row in (0, 9) or cell.column in (0, 9)
         hard = state_for()
-        hard.opponent = {"kind": "BUILT_IN_BOT", "builtInBot": "HARD"}
+        hard.opponent_info = OpponentInfo(key="builtin:HARD", built_in_bot="HARD")
         speedrun = state_for("SPEEDRUN")
         remote = state_for()
-        remote.opponent = {"kind": "REMOTE_BOT", "botId": "x", "teamName": "Kraken", "builtInBot": None}
+        remote.opponent_info = OpponentInfo(key="bot:x", bot_id="x")
+        strong = state_for()
+        strong.opponent_info = OpponentInfo(key="bot:y", bot_id="y", rating=1700.0)
         recovered = state_for()
-        recovered.opponent = {}
+        bot = ProbabilityBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
         for _ in range(20):
-            self.assertTrue(border(ProbabilityBot().choose_action(hard, 150).cell))
-            self.assertTrue(border(ProbabilityBot().choose_action(speedrun, 150).cell))
-            self.assertFalse(border(ProbabilityBot().choose_action(remote, 150).cell))
-            self.assertFalse(border(ProbabilityBot().choose_action(recovered, 150).cell))
+            self.assertTrue(border(bot.choose_action(hard, 150).cell))
+            self.assertTrue(border(bot.choose_action(speedrun, 150).cell))
+            self.assertFalse(border(bot.choose_action(strong, 150).cell))
+            self.assertFalse(border(bot.choose_action(remote, 150).cell))
+            self.assertFalse(border(bot.choose_action(recovered, 150).cell))
+        long_on_border = lambda ships: all(border(c) for ship in ships if len(ship) > 1 for c in ship)
+        self.assertTrue(all(long_on_border(bot.place_ships_for_match(hard)) for _ in range(20)))
+        self.assertFalse(all(long_on_border(bot.place_ships_for_match(remote)) for _ in range(20)))
+        for state in (hard, remote, strong, recovered):
+            self.assertTrue(valid_placement(bot.place_ships_for_match(state), state.rules))
 
     def test_defended_cell_is_shot_again(self):
         state = state_for()
@@ -77,7 +90,7 @@ class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
         try:
             await worker.start()
             state = state_for()
-            ships = await worker.call("place_ships", (state.rules,), 1.0)
+            ships = await worker.call("place_ships_for_match", (state,), 1.0)
             self.assertTrue(valid_placement(ships, state.rules))
             action = await worker.call("choose_action", (state, 150), 0.15)
             self.assertTrue(valid_action(action, state))
