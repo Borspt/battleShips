@@ -181,6 +181,15 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([m["amount"] for m in self.sent], [5.0, 5.0, client.FOLD_AMOUNT, 5.0])
         client._outbid.clear()
 
+    def test_bet_for_a_single_bot_beats_the_team_bet(self):
+        from battleships.client import choose_bet
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "bets.json"
+            path.write_text(json.dumps({"default": ["SPEEDRUN", 1], "teams": {"Команда": ["SPEEDRUN", 2]},
+                                        "bots": {"abc": ["DUEL", 8]}}), encoding="utf-8")
+            self.assertEqual(choose_bet("FILE", {"botId": "abcdef", "teamName": "Команда"}, path), ("DUEL", 8.0))
+            self.assertEqual(choose_bet("FILE", {"botId": "zzz", "teamName": "Команда"}, path), ("SPEEDRUN", 2.0))
+
     def test_broken_bet_file_means_no_bet(self):
         from battleships.client import choose_bet
         self.assertEqual(choose_bet("FILE", {"teamName": "x"}, Path("нет-такого-файла.json")), ("", 0.0))

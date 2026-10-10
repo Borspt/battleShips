@@ -97,8 +97,11 @@ def choose_bet(setting: str, opponent: dict, path: Path | None = None) -> tuple[
             return wanted, float(amount)
         table = json.loads((path or BETS_FILE).read_text(encoding="utf-8"))
         team = opponent.get("teamName") or opponent.get("builtInBot") or ""
-        wanted, amount = next((bet for name, bet in (table.get("teams") or {}).items() if name in team),
-                              table["default"])
+        bot = opponent.get("botId") or ""
+        # сначала ставка на конкретного бота (ключ — начало botId), потом на команду, потом общая
+        wanted, amount = next(
+            (bet for start, bet in (table.get("bots") or {}).items() if bot.startswith(start)),
+            next((bet for name, bet in (table.get("teams") or {}).items() if name in team), table["default"]))
         return str(wanted), float(amount)
     except (OSError, ValueError, KeyError, TypeError):
         return "", 0.0
