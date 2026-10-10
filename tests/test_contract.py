@@ -104,7 +104,7 @@ class ProbabilityBotTest(unittest.TestCase):
                 state = state_for()
                 self.assertTrue(valid_placement(ProbabilityBot().place_ships_for_match(state), state.rules))
 
-    def endgame_state(self, opponent_hits=12):
+    def endgame_state(self, opponent_hits=15):
         """Поле соперника обстреляно так, что остались два однопалубных в двух несвязанных зонах."""
         state = state_for()
         state.ships = ProbabilityBot().place_ships(state.rules)
@@ -140,12 +140,34 @@ class ProbabilityBotTest(unittest.TestCase):
         bot = ProbabilityBonusBot()
         bot.book = ProfileBook(Path("no-such-profiles.json"))
         self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=4), 150).type, "SHOOT")
+        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=12), 150).type, "SHOOT")  # 18 против 12
+        self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=13), 150).type, "USE_BONUS")
         last_shot = self.endgame_state()
         last_shot.shots_left = 1
         self.assertEqual(bot.choose_action(last_shot, 150).type, "SHOOT")
         no_uses = self.endgame_state()
         no_uses.bonuses = {}
         self.assertEqual(bot.choose_action(no_uses, 150).type, "SHOOT")
+
+    def test_schrodinger_sunk_check_is_asked_unless_we_are_far_ahead(self):
+        bot = ProbabilityBonusBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        def action(opponent_hits):
+            state = state_for("SCHRODINGER_SHIP")
+            state.ships = ProbabilityBot().place_ships(state.rules)
+            own = [cell for ship in state.ships for cell in ship]
+            state.opponent_shots = [(cell, "HIT") for cell in own[:opponent_hits]]
+            state.bonuses = {"DISTANCE": 3}
+            state.shots_left = 80
+            # Потоплены четвёрка, тройки и две двойки; одиночное попадание — однопалубный или начало двойки.
+            sunk = [[(0, 0), (0, 1), (0, 2), (0, 3)], [(2, 0), (2, 1), (2, 2)], [(4, 0), (4, 1), (4, 2)],
+                    [(6, 0), (6, 1)], [(8, 0), (8, 1)]]
+            state.shots = [(Cell(*cell), "HIT") for ship in sunk for cell in ship] + [(Cell(4, 6), "HIT")]
+            return bot.choose_action(state, 150)
+        for opponent_hits in (10, 15, 19):  # ведём меньше шести попаданий, вровень или отстаём
+            asked = action(opponent_hits)
+            self.assertEqual((asked.type, asked.bonus, asked.cell), ("USE_BONUS", "DISTANCE", Cell(4, 6)), opponent_hits)
+        self.assertEqual(action(9).type, "SHOOT")  # пятнадцать попаданий против девяти
 
     def musketeers_state(self):
         state = state_for("THREE_MUSKETEERS")
