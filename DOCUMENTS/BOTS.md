@@ -58,6 +58,11 @@
 .\scripts\run-haki.ps1
 ```
 
+По просьбе Музроба этот скрипт останавливается при первом `MATCH_FINISHED` с
+`outcome: LOSS`, включая техническое поражение. Победы и ничьи продолжают игру.
+Отключение выполняет сам клиент; после поражения он не переподключается. В журнале
+появляется `stop_on_loss`. У остальных запусков этот режим выключен по умолчанию.
+
 Для остановки после одной законченной партии:
 
 ```powershell
@@ -69,7 +74,7 @@
 режим `RANKING` и отдельный журнал `logs/muzrob`. Эквивалент вручную:
 
 ```powershell
-.\.venv\Scripts\python.exe -u -m battleships --env-file .env.muzrob --token-env BATTLESHIPS_TOKEN_MUZROB --strategy battleships.strategies.haki:HakiObservationBot --mode RANKING --log-dir logs/muzrob
+.\.venv\Scripts\python.exe -u -m battleships --env-file .env.muzrob --token-env BATTLESHIPS_TOKEN_MUZROB --strategy battleships.strategies.haki:HakiObservationBot --mode RANKING --log-dir logs/muzrob --stop-on-loss
 ```
 
 ## Запуск Нагибатора228

@@ -7,7 +7,7 @@ Push-Location -LiteralPath $repoDirectory
 try {
     & $pythonPath -u -m battleships --env-file .env.muzrob --token-env BATTLESHIPS_TOKEN_MUZROB `
         --strategy battleships.strategies.haki:HakiObservationBot --mode RANKING `
-        --log-dir logs/muzrob --stop-after $StopAfter
+        --log-dir logs/muzrob --stop-after $StopAfter --stop-on-loss
     $botExitCode = $LASTEXITCODE
 } finally {
     Pop-Location
