@@ -1,4 +1,5 @@
 import asyncio
+import os
 import json
 import logging
 import random
@@ -230,7 +231,16 @@ class Controller:
                 await self.place()
             return
         if kind == "BET_REQUESTED":
-            self.journal.write("bet_skipped", {"reason": "rating spending disabled"})
+            # «Казино „Рояль“»: ставка включается переменной BATTLESHIPS_BET="МОДИФИКАТОР:очки", иначе не ставим.
+            wanted, _, amount = os.environ.get("BATTLESHIPS_BET", "").partition(":")
+            try:
+                amount = float(amount)
+            except ValueError:
+                amount = 0.0
+            if wanted in (msg.get("modifiers") or []) and 0 < amount <= float(msg.get("maxAmount") or 0):
+                await self.emit({"type": "PLACE_BET", "modifier": wanted, "amount": amount})
+            else:
+                self.journal.write("bet_skipped", {"reason": "rating spending disabled", "offered": msg.get("modifiers")})
             return
         if self.state is None:
             return
