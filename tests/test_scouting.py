@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from battleships.model import OpponentInfo
 from battleships.scouting import build_profiles, profile_for, save_profiles, load_profiles
 from tests.fixtures import rules
 
@@ -48,7 +49,7 @@ class ScoutingTest(unittest.TestCase):
         self.directory.cleanup()
 
     def test_profile_collects_results_placement_and_shooting(self):
-        profile = build_profiles(self.store)["bot-a"]
+        profile = build_profiles(self.store)["bot:bot-a"]
         self.assertEqual((profile["matches"], profile["wins"], profile["losses"]), (2, 1, 1))
         self.assertEqual((profile["botName"], profile["team"], profile["rating"]), ("Squid", "Kraken", 1510.5))
         self.assertEqual((profile["placements"], profile["uniquePlacements"]), (2, 1))
@@ -61,7 +62,7 @@ class ScoutingTest(unittest.TestCase):
 
     def test_built_in_bots_and_head_to_head(self):
         profiles = build_profiles(self.store, own_team="Kraken")
-        hard = profiles["BUILT_IN:HARD"]
+        hard = profiles["builtin:HARD"]
         self.assertEqual((hard["wins"], hard["losses"], hard["longShipsOnBorder"]), (1, 1, 0.0))
         self.assertEqual(hard["vsUs"], {"matches": 2, "wins": 1, "losses": 1, "draws": 0})
 
@@ -71,14 +72,16 @@ class ScoutingTest(unittest.TestCase):
             {"botId": "bot-z", "teamName": "Newcomers", "botName": "Zed", "rating": 1500.0, "rankingMatchCount": 0}]}
         (self.store / "leaderboard.json").write_text(json.dumps(snapshot), encoding="utf-8")
         profiles = build_profiles(self.store)
-        self.assertEqual((profiles["bot-a"]["rating"], profiles["bot-a"]["botName"]), (1620.0, "Squid 2"))
-        self.assertEqual((profiles["bot-z"]["matches"], profiles["bot-z"]["rating"]), (0, 1500.0))
+        self.assertEqual((profiles["bot:bot-a"]["rating"], profiles["bot:bot-a"]["botName"]), (1620.0, "Squid 2"))
+        self.assertEqual((profiles["bot:bot-z"]["matches"], profiles["bot:bot-z"]["rating"]), (0, 1500.0))
 
     def test_lookup_by_match_started_opponent(self):
         save_profiles(build_profiles(self.store), self.store)
         profiles = load_profiles(self.store)
         self.assertEqual(profile_for(profiles, {"kind": "REMOTE_BOT", "botId": "bot-a", "builtInBot": None})["team"], "Kraken")
-        self.assertEqual(profile_for(profiles, {"kind": "BUILT_IN_BOT", "botId": None, "builtInBot": "HARD"})["key"], "BUILT_IN:HARD")
+        self.assertEqual(profile_for(profiles, {"kind": "BUILT_IN_BOT", "botId": None, "builtInBot": "HARD"})["key"], "builtin:HARD")
+        self.assertEqual(profile_for(profiles, OpponentInfo(key="bot:bot-a", bot_id="bot-a"))["team"], "Kraken")
+        self.assertIsNone(profile_for(profiles, OpponentInfo()))
         self.assertIsNone(profile_for(profiles, {"kind": "REMOTE_BOT", "botId": "unknown", "builtInBot": None}))
         self.assertIsNone(profile_for(profiles, {}))
 

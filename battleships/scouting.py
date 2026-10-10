@@ -13,7 +13,7 @@
 Для выбора стратегии под соперника:
 
     profiles = load_profiles()
-    profile = profile_for(profiles, state.opponent)   # None, если бота ещё не видели
+    profile = profile_for(profiles, state.opponent_info)   # None, если бота ещё не видели
 """
 
 from __future__ import annotations
@@ -29,6 +29,8 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+
+from .model import OpponentInfo
 
 BASE_URL = "https://hackathon.no-offence.ru/api/v1"
 STORE = Path("runtime/scouting")
@@ -96,7 +98,8 @@ def sync(platform: Platform, store: Path = STORE, max_new: int = 400, full: bool
 
 
 def _key(side: dict) -> str:
-    return side["botId"] if side["kind"] == "REMOTE_BOT" else f"BUILT_IN:{side['builtInBot']}"
+    """Тот же ключ, что OpponentInfo.key в оболочке: bot:<UUID> или builtin:<уровень>."""
+    return f"bot:{side['botId']}" if side["kind"] == "REMOTE_BOT" else f"builtin:{side['builtInBot']}"
 
 
 def _new_profile(side: dict) -> dict:
@@ -182,7 +185,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
     if leaderboard.exists():
         snapshot = json.loads(leaderboard.read_text(encoding="utf-8"))
         for bot in snapshot["bots"]:
-            profile = profiles.setdefault(bot["botId"], _new_profile(
+            profile = profiles.setdefault(f"bot:{bot['botId']}", _new_profile(
                 {"kind": "REMOTE_BOT", "botId": bot["botId"], "name": bot["teamName"], "botName": bot["botName"]}))
             profile.update(team=bot["teamName"], botName=bot["botName"], rating=bot["rating"],
                            ratingAt=snapshot["fetchedAt"], rankingMatches=bot["rankingMatchCount"])
@@ -214,11 +217,13 @@ def load_profiles(store: Path = STORE) -> dict[str, dict]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
-def profile_for(profiles: dict[str, dict], opponent: dict) -> dict | None:
-    """Профиль по полю opponent из MATCH_STARTED."""
+def profile_for(profiles: dict[str, dict], opponent) -> dict | None:
+    """Профиль по state.opponent_info оболочки или по полю opponent из MATCH_STARTED."""
     if not opponent:
         return None
-    return profiles.get(opponent.get("botId") or f"BUILT_IN:{opponent.get('builtInBot')}")
+    if isinstance(opponent, dict):
+        opponent = OpponentInfo.from_wire(opponent)
+    return profiles.get(opponent.key) if opponent.key else None
 
 
 def _percent(value) -> str:
