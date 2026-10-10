@@ -357,6 +357,7 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
         except Exception as exc:
             journal.write("strategy_start_failed", {"reason": type(exc).__name__})
         while True:
+            rating_reconnect = False
             if controller is not None:
                 await controller.close()
             opened_at = time.monotonic()
@@ -400,10 +401,22 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                                 journal.write("haki_session_stopped", {"reason": "OPERATOR_STOP", "completed": completed})
                                 return
                             if rating_gate and was_active:
+                                # Stop matchmaking before doing HTTP work. Keeping
+                                # this socket open can assign another match during
+                                # the rating lookup, then disconnect it unplaced.
+                                await ws.close()
+                                if session.should_stop:
+                                    journal.write('haki_session_stopped', {'reason': session.stop_reason})
+                                    return
                                 reason = await rating_gate.after_match()
                                 if reason:
                                     journal.write('haki_session_stopped', {'reason': reason})
                                     return
+                                if controller.stop_requested():
+                                    journal.write('haki_session_stopped', {'reason': 'OPERATOR_STOP'})
+                                    return
+                                rating_reconnect = True
+                                break
                             if (stop_on_loss and message.get("outcome") == "LOSS"
                                     and (session is None or
                                          (session.stop_policy == 'LOSSES' and session.should_stop))):
@@ -450,6 +463,9 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                     return
             except (OSError, TimeoutError) as exc:
                 journal.write("connection_error", {"reason": type(exc).__name__})
+            if rating_reconnect:
+                journal.write('haki_rating_continue')
+                continue
             if time.monotonic() - opened_at > 30:
                 delay = 0.5
             await asyncio.sleep(delay + random.uniform(0, delay * 0.2))
