@@ -9,15 +9,37 @@ from pathlib import Path
 from uuid import uuid4
 
 from websockets.asyncio.client import connect
-from websockets.exceptions import ConnectionClosed, InvalidStatus
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK, InvalidStatus
 
 from .model import Action, Cell, GameState, valid_action, valid_placement
 from .strategy import BaselineStrategy
 from .worker import StrategyWorker
 from .opponents import OpponentDirectory
+from .haki_session import HAKI_STRATEGY, HakiSession
 
 LOG = logging.getLogger(__name__)
 STOP_CODES = {4001, 4002, 4004, 4005}
+
+
+async def session_messages(ws, session):
+    if session is None:
+        async for raw in ws:
+            yield raw
+        return
+    while True:
+        try:
+            # Нет ответа/матча: это не доказательство отключения тренировок.
+            # Заканчиваем запуск, не переключаемся в рейтинг наугад.
+            waiting_for_mode_or_training = not session.active and (
+                not session.confirmed or session.mode == "TRAINING")
+            raw = await asyncio.wait_for(ws.recv(),
+                session.idle_timeout if waiting_for_mode_or_training else None)
+        except TimeoutError:
+            session.stop_reason = "MODE_OR_MATCH_WAIT_TIMEOUT"
+            return
+        except ConnectionClosedOK:
+            return
+        yield raw
 
 
 class Journal:
@@ -266,6 +288,9 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                   log_dir: str, budget_ms: int, reserve_ms: int, allow_bonuses: bool,
                   stop_after: int = 0, opponent_ratings_file: str | None = None,
                   stop_on_loss: bool = False):
+    session = HakiSession(mode, opponent) if strategy == HAKI_STRATEGY else None
+    # Для Хаки это обязательное правило, даже если забыли флаг в ручной команде.
+    stop_on_loss = stop_on_loss or session is not None
     worker = StrategyWorker(strategy)
     journal = Journal(log_dir, token)
     completed = 0
@@ -286,13 +311,16 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                                    open_timeout=10, ping_interval=20, ping_timeout=20,
                                    close_timeout=2, max_size=4 * 1024 * 1024, proxy=None) as ws:
                     journal.write("connected")
-                    LOG.info("Connected; requested mode: %s", mode)
+                    LOG.info("Connected; requested mode: %s", session.mode if session else mode)
                     controller = Controller(ws.send, worker, journal, budget_ms=budget_ms,
                                             reserve_ms=reserve_ms, allow_bonuses=allow_bonuses,
                                             opponent_directory=directory)
-                    await controller.emit({"type": "CHANGE_MODE", "mode": mode,
-                                           **({"opponent": opponent} if mode == "TRAINING" else {})})
-                    async for raw in ws:
+                    if session:
+                        session.connected()
+                    await controller.emit(session.command() if session else
+                        {"type": "CHANGE_MODE", "mode": mode,
+                         **({"opponent": opponent} if mode == "TRAINING" else {})})
+                    async for raw in session_messages(ws, session):
                         try:
                             message = json.loads(raw)
                             if not isinstance(message, dict):
@@ -301,6 +329,8 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                             journal.write("invalid_platform_json")
                             continue
                         # Transport/send errors must leave this loop and reconnect.
+                        if session:
+                            session.observe(message)
                         try:
                             await controller.handle(message)
                         except (KeyError, TypeError, ValueError) as exc:
@@ -316,6 +346,18 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                                 return
                             if stop_after and completed >= stop_after:
                                 return
+                        if session and session.should_stop:
+                            journal.write("haki_session_stopped", {"reason": session.stop_reason})
+                            LOG.warning("Haki stopped: %s", session.stop_reason)
+                            return
+                        if session and session.change_requested:
+                            journal.write("haki_training_passed", {"wins": session.training_wins})
+                            LOG.info("Haki: three training wins; requesting RANKING")
+                            await controller.emit(session.command())
+                    if session and session.should_stop:
+                        journal.write("haki_session_stopped", {"reason": session.stop_reason})
+                        LOG.warning("Haki stopped: %s", session.stop_reason)
+                        return
                     # A normal close can also carry a terminal platform code.
                     if ws.close_code in STOP_CODES:
                         journal.write("terminal_close", {"code": ws.close_code})
