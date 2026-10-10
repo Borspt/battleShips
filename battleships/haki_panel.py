@@ -88,11 +88,15 @@ class Manager:
             self.last_series_status = signature
         self.refresh_rating()
         processes, discovery_error = self.processes()
+        # Once this series stops, later games from another runner must not
+        # rewrite its result. The top rating remains the current platform value.
+        series_rating = (state.get('ratingAfterDisconnect', state.get('ratingCurrent'))
+                         if state.get('status') == 'stopped' else self.rating)
         return {'bot': 'Хаки Наблюдения', 'series': state, 'hakiProcesses': processes,
                 'processCheckError': discovery_error, 'automaticRestart': False,
                 'rating': self.rating, 'ratingObservedAt': self.rating_observed,
-                'ratingDelta': self.rating - state['ratingBefore']
-                    if self.rating is not None and state.get('ratingBefore') is not None else None}
+                'ratingDelta': series_rating - state['ratingBefore']
+                    if series_rating is not None and state.get('ratingBefore') is not None else None}
 
     def action(self, action):
         with self.lock:
