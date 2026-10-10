@@ -71,13 +71,15 @@ class Journal:
 
 class Controller:
     def __init__(self, send, worker, journal, *, budget_ms=150, reserve_ms=250,
-                 allow_bonuses=False, opponent_directory=None):
+                 allow_bonuses=False, opponent_directory=None, protect_turn_order=False):
         self.send = send
         self.worker = worker
         self.journal = journal
         self.budget_ms = budget_ms
         self.reserve_ms = reserve_ms
         self.allow_bonuses = allow_bonuses
+        # Enabled only for Haki; other bots retain their existing transport behavior.
+        self.protect_turn_order = protect_turn_order
         self.fallback = BaselineStrategy()
         self.state = None
         self.pending = None
@@ -232,8 +234,15 @@ class Controller:
             self.retries = 0
             await self.act()
         elif kind == "SHOT_RESOLVED":
-            self.state.shots.append((Cell.parse(msg["cell"]), msg["result"]))
-            self.pending = None
+            cell = Cell.parse(msg["cell"])
+            self.state.shots.append((cell, msg["result"]))
+            # A result can arrive after a timeout and a newer TURN_REQUESTED.
+            # Keep its board evidence, but do not acknowledge a different action.
+            if (not self.protect_turn_order or self.pending is None or
+                    (self.pending.type == "SHOOT" and self.pending.cell == cell)):
+                self.pending = None
+            else:
+                self.journal.write("haki_unmatched_shot_result", {"cell": cell.wire()})
             # Always wait for TURN_REQUESTED, including after a HIT.
         elif kind == "OPPONENT_SHOT":
             cell, result = Cell.parse(msg["cell"]), msg["result"]
@@ -267,6 +276,18 @@ class Controller:
                 self.pending = None
                 await self.act(fallback_only=True)
         elif kind in {"TURN_TIMED_OUT", "SHOT_REJECTED"}:
+            if self.protect_turn_order:
+                if (kind == "TURN_TIMED_OUT" and self.turn_key is not None and
+                        isinstance(msg.get("moveNumber"), int) and
+                        msg["moveNumber"] < self.turn_key[0]):
+                    self.journal.write("haki_stale_timeout_ignored", msg)
+                    return
+                if (kind == "SHOT_REJECTED" and self.pending is not None and
+                        msg.get("cell") is not None and
+                        (self.pending.type != "SHOOT" or
+                         self.pending.cell != Cell.parse(msg["cell"]))):
+                    self.journal.write("haki_unmatched_shot_rejection", msg)
+                    return
             self.pending = None
             self.turn_deadline = 0.0
         elif kind == "MATCH_FINISHED":
@@ -314,7 +335,8 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                     LOG.info("Connected; requested mode: %s", session.mode if session else mode)
                     controller = Controller(ws.send, worker, journal, budget_ms=budget_ms,
                                             reserve_ms=reserve_ms, allow_bonuses=allow_bonuses,
-                                            opponent_directory=directory)
+                                            opponent_directory=directory,
+                                            protect_turn_order=session is not None)
                     if session:
                         session.connected()
                     await controller.emit(session.command() if session else
