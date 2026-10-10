@@ -42,6 +42,8 @@ STORE = Path("runtime/scouting")  # реплеи и лидерборд, лока
 PROFILES = Path("scouting/profiles.json")  # профили, в репозитории
 DOWNLOADS = 4  # одновременных запросов к платформе
 OPENING = 15  # сколько первых выстрелов партии считаем «дебютом» стрелка
+RECENT = 25  # сколько последних партий против ботов команд идёт в раздел recent профиля
+RECENT_VS_US = 10  # и сколько последних партий против нашей команды — в recentVsUs
 
 
 class Platform:
@@ -138,6 +140,7 @@ def _new_profile(side: dict) -> dict:
 def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str, dict]:
     """Собирает профили всех ботов из скачанных матчей и последнего лидерборда."""
     profiles: dict[str, dict] = {}
+    history: dict[str, list] = {}  # по каждому боту — его партии против ботов команд, для разделов recent
     for path in sorted((store / "matches").glob("*.json")):
         match = json.loads(path.read_text(encoding="utf-8"))
         events = match.get("events") or []
@@ -202,6 +205,18 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
                 profile["firstShots"][f"{own[0]['cell']['row']},{own[0]['cell']['column']}"] += 1
             if match.get("winner") == seat and match.get("endReason") == "FLEET_DESTROYED" and not rules.get("modifier"):
                 profile["shotsToDestroy"].append(len(own))
+            if opponent["kind"] == "REMOTE_BOT":
+                long_ships = [ship["cells"] for ship in placed or [] if len(ship["cells"]) > 1]
+                singles = [ship["cells"][0] for ship in placed or [] if len(ship["cells"]) == 1]
+                history.setdefault(_key(side), []).append({
+                    "at": match["startedAt"], "vsUs": bool(own_team) and opponent.get("name") == own_team,
+                    "placed": bool(placed),
+                    "long": sum(len(cells) for cells in long_ships),
+                    "longBorder": sum(on_border(cell) for cells in long_ships for cell in cells),
+                    "singles": len(singles), "singlesBorder": sum(on_border(cell) for cell in singles),
+                    "opening": len(own[:OPENING]), "openingBorder": sum(on_border(e["cell"]) for e in own[:OPENING]),
+                    "shotCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own},
+                })
 
     leaderboard = store / "leaderboard.json"
     if leaderboard.exists():
@@ -212,8 +227,26 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
             profile.update(team=bot["teamName"], botName=bot["botName"], rating=bot["rating"],
                            ratingAt=snapshot["fetchedAt"], rankingMatches=bot["rankingMatchCount"])
 
-    for profile in profiles.values():
-        share = lambda part, whole: round(part / whole, 3) if whole else None
+    share = lambda part, whole: round(part / whole, 3) if whole else None
+
+    def window(games: list) -> dict:
+        """Привычки бота по последним партиям: соперники меняют игру в течение дня и под нас лично."""
+        cells = Counter(cell for game in games for cell in game["shotCells"])
+        return {
+            "matches": len(games), "placements": sum(game["placed"] for game in games),
+            "since": games[0]["at"] if games else None,
+            "singles": sum(game["singles"] for game in games),
+            "longShipsOnBorder": share(sum(g["longBorder"] for g in games), sum(g["long"] for g in games)),
+            "singlesOnBorderShare": share(sum(g["singlesBorder"] for g in games), sum(g["singles"] for g in games)),
+            "openingOnBorder": share(sum(g["openingBorder"] for g in games), sum(g["opening"] for g in games)),
+            # Доля партий, в которых бот хоть раз выстрелил в клетку: по ней ставятся мины.
+            "shotCells": {cell: round(count / len(games), 2) for cell, count in cells.most_common()},
+        }
+
+    for key, profile in profiles.items():
+        games = sorted(history.get(key, []), key=lambda game: game["at"])
+        profile["recent"] = window(games[-RECENT:])
+        profile["recentVsUs"] = window([game for game in games if game["vsUs"]][-RECENT_VS_US:])
         destroy = profile.pop("shotsToDestroy")
         profile["uniquePlacements"] = len(profile["uniquePlacements"])
         profile["winRate"] = share(profile["wins"], profile["matches"])

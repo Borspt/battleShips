@@ -16,6 +16,8 @@ from .probability import HARD_BIAS, EdgeBias
 MEDIUM_BIAS = EdgeBias(edge=3.0, corner=6.0, single_edge=0.7)
 
 MIN_PLACEMENTS = 8  # меньше расстановок в профиле — привычкам соперника не верим
+MIN_RECENT_VS_US = 5  # партий с нами хватает меньше: это ровно та игра, которую нам предстоит встретить
+MEDIUM_SHARE = 0.45  # при случайной расстановке у края около трети клеток длинных кораблей
 MIN_MATCHES = 5
 
 
@@ -36,19 +38,30 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None) -> Plan:
     placement, bias, reasons = random_placement, None, []
     versus_bots = (profile or {}).get("vsBots") or {}
 
-    # Поправка в стрельбе — только по расстановкам против ботов команд: по реплеям видно, что
-    # против встроенного HARD лидеры ставят флот у краёв, а против ботов команд — нет.
-    if versus_bots.get("placements", 0) >= MIN_PLACEMENTS:
-        share = versus_bots.get("longShipsOnBorder") or 0.0
+    # Поправка в стрельбе — по расстановкам против ботов команд, и чем свежее, тем важнее: сначала
+    # последние партии с нами, потом последние партии с кем угодно, потом всё за день. Соперники
+    # меняют расстановку в течение дня: «Низкие ожидания» за день в среднем ставили у края 31%
+    # клеток длинных кораблей, а против нас в «Трёх мушкетёрах» — 51–59%.
+    habits, source = None, ""
+    for section, minimum, label in (("recentVsUs", MIN_RECENT_VS_US, "в последних партиях с нами"),
+                                    ("recent", MIN_PLACEMENTS, "в последних партиях"),
+                                    ("vsBots", MIN_PLACEMENTS, "против ботов команд")):
+        candidate = (profile or {}).get(section) or {}
+        if candidate.get("placements", 0) >= minimum:
+            habits, source = candidate, label
+            break
+    if habits:
+        share = habits.get("longShipsOnBorder") or 0.0
         if share >= 0.9:
             bias = HARD_BIAS
-        elif share >= 0.55:
+        elif share >= MEDIUM_SHARE:
             bias = MEDIUM_BIAS
         if bias:
-            # Однопалубные на крайних клетках при случайной расстановке — 36% случаев.
-            if (versus_bots.get("singlesOnBorderShare") or 0.0) >= 0.36:
-                bias = replace(bias, single_edge=1.0)
-            reasons.append(f"против ботов команд ставит {share:.0%} длинных кораблей у края")
+            # Однопалубные: во сколько раз крайняя клетка занята чаще внутренней. На краю 36% клеток поля.
+            singles = habits.get("singlesOnBorderShare")
+            if singles is not None and 0 < singles < 1:
+                bias = replace(bias, single_edge=round(min(4.0, max(0.5, (singles / 0.36) / ((1 - singles) / 0.64))), 2))
+            reasons.append(f"{source} ставит {share:.0%} длинных кораблей у края")
     elif getattr(opponent, "built_in_bot", None) == "HARD":
         bias = HARD_BIAS
         reasons.append("встроенный HARD ставит флот у краёв")
@@ -81,6 +94,11 @@ class ProfileBook:
         self.path = path
         self.loaded_at = None
         self.profiles: dict[str, dict] = {}
+
+    def rating_of(self, bot_name: str) -> float | None:
+        """Последний известный рейтинг бота по имени — так стратегия узнаёт собственный рейтинг."""
+        self.lookup(None)
+        return next((p.get("rating") for p in self.profiles.values() if p.get("botName") == bot_name), None)
 
     def lookup(self, opponent) -> dict | None:
         try:

@@ -155,53 +155,95 @@ class ProbabilityBotTest(unittest.TestCase):
         state.opponent_info = OpponentInfo(key="bot:a", bot_id="a")
         return state
 
-    def test_mines_are_laid_first_in_three_musketeers_away_from_own_fleet(self):
-        bot = ProbabilityBonusBot()
-        bot.book = ProfileBook(Path("no-such-profiles.json"))
-        state = self.musketeers_state()
-        own = {cell for ship in state.ships for cell in ship}
-        for laid in range(3):
-            action = bot.choose_action(state, 150)
-            self.assertEqual((action.type, action.bonus), ("USE_BONUS", "MINE"))
-            self.assertTrue(valid_action(action, state, allow_bonuses=True))
-            self.assertTrue(all(abs(action.cell.row - c.row) > 1 or abs(action.cell.column - c.column) > 1 for c in own))
-            self.assertNotIn(action.cell, state.mines)
-            state.mines.add(action.cell)
-            state.bonuses["MINE"] -= 1
-        self.assertEqual(bot.choose_action(state, 150).type, "SHOOT")
+    def book_with(self, directory, **profiles):
+        path = Path(directory) / "profiles.json"
+        path.write_text(json.dumps(profiles), encoding="utf-8")
+        return ProfileBook(path)
 
-    def test_mine_goes_where_this_opponent_shoots_and_not_where_he_already_shot(self):
-        state = self.musketeers_state()
+    def far_cells(self, state):
         own = {cell for ship in state.ships for cell in ship}
-        far = [c for c in state.rules.cells() if all(abs(c.row - o.row) > 1 or abs(c.column - o.column) > 1 for o in own)]
-        favourite, second = far[0], far[-1]
+        return [c for c in state.rules.cells() if all(abs(c.row - o.row) > 1 or abs(c.column - o.column) > 1 for o in own)]
+
+    def test_mines_go_only_where_this_opponent_shoots_in_most_recent_games(self):
+        state = self.musketeers_state()
+        far = self.far_cells(state)
+        sure, likely, rare = far[0], far[len(far) // 2], far[-1]
+        key = lambda c: f"{c.row},{c.column}"
+        habits = {"matches": 20, "shotCells": {key(sure): 0.95, key(likely): 0.8, key(rare): 0.4}}
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "profiles.json"
-            path.write_text(json.dumps({"bot:a": {"openingCells": {
-                f"{favourite.row},{favourite.column}": 9, f"{second.row},{second.column}": 5}}}), encoding="utf-8")
             bot = ProbabilityBonusBot()
-            bot.book = ProfileBook(path)
-            self.assertEqual(bot.choose_action(state, 150).cell, favourite)
-            state.opponent_shots = [(favourite, "MISS")]
-            self.assertEqual(bot.choose_action(state, 150).cell, second)
+            bot.book = self.book_with(directory, **{"bot:a": {"recent": habits}})
+            laid = []
+            for _ in range(2):
+                action = bot.choose_action(state, 150)
+                self.assertEqual((action.type, action.bonus), ("USE_BONUS", "MINE"))
+                self.assertTrue(valid_action(action, state, allow_bonuses=True))
+                laid.append(action.cell)
+                state.mines.add(action.cell)
+                state.bonuses["MINE"] -= 1
+            self.assertEqual(laid, [sure, likely])
+            self.assertEqual(bot.choose_action(state, 150).type, "SHOOT")   # клетка с 40% мины не стоит
 
-    def test_mines_are_not_spent_outside_three_musketeers_or_beyond_the_limit(self):
-        bot = ProbabilityBonusBot()
+            state.mines.clear()
+            state.opponent_shots = [(sure, "MISS")]                          # туда он уже выстрелил
+            self.assertEqual(bot.choose_action(state, 150).cell, likely)
+
+    def test_mines_are_not_spent_without_fresh_data_outside_three_musketeers_or_beyond_the_limit(self):
+        state = self.musketeers_state()
+        far = self.far_cells(state)
+        habits = {"matches": 20, "shotCells": {f"{c.row},{c.column}": 0.9 for c in far}}
+        with tempfile.TemporaryDirectory() as directory:
+            bot = ProbabilityBonusBot()
+            bot.book = self.book_with(directory, **{"bot:a": {"recent": habits}, "bot:b": {"recent": dict(habits, matches=3)}})
+            self.assertEqual(bot.choose_action(state, 150).bonus, "MINE")
+            for modifier in (None, "DUEL", "HUNGER_GAMES"):
+                other = self.musketeers_state()
+                other.rules = state_for(modifier).rules
+                self.assertEqual(bot.choose_action(other, 150).type, "SHOOT", modifier)
+            unknown = self.musketeers_state()
+            unknown.opponent_info = OpponentInfo(key="bot:zzz", bot_id="zzz")
+            self.assertEqual(bot.choose_action(unknown, 150).type, "SHOOT")
+            few_games = self.musketeers_state()
+            few_games.opponent_info = OpponentInfo(key="bot:b", bot_id="b")
+            self.assertEqual(bot.choose_action(few_games, 150).type, "SHOOT")
+            spent = self.musketeers_state()
+            spent.opponent_shots = [(Cell(0, 0), "MINE"), (Cell(0, 1), "MINE")]
+            spent.mines = {far[0]}
+            self.assertNotEqual(bot.choose_action(spent, 150).bonus, "MINE")
+            no_uses = self.musketeers_state()
+            no_uses.bonuses = {"DISTANCE": 3}
+            self.assertEqual(bot.choose_action(no_uses, 150).type, "SHOOT")
+            plain = ProbabilityBot()
+            plain.book = bot.book
+            self.assertEqual(plain.choose_action(self.musketeers_state(), 150).type, "SHOOT")
+
+    def test_no_bonuses_against_much_weaker_opponent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            far = self.far_cells(self.musketeers_state())
+            bot = ProbabilityBonusBot()
+            mines = self.musketeers_state()
+            habits = {"matches": 20, "shotCells": {f"{c.row},{c.column}": 0.9 for c in self.far_cells(mines)}}
+            bot.book = self.book_with(directory, **{"bot:a": {"recent": habits}, "bot:me": {"botName": bot.own_name, "rating": 1600.0}})
+            endgame = self.endgame_state()
+            for rating, spends in ((1580.0, True), (None, True), (1400.0, False)):
+                mines.opponent_info = OpponentInfo(key="bot:a", bot_id="a", rating=rating)
+                endgame.opponent_info = OpponentInfo(key="bot:a", bot_id="a", rating=rating)
+                self.assertEqual(bot.choose_action(mines, 150).type == "USE_BONUS", spends, rating)
+                self.assertEqual(bot.choose_action(endgame, 150).type == "USE_BONUS", spends, rating)
+
+    def test_shots_are_spread_while_opponent_has_mines_we_have_not_stepped_on(self):
+        bot = ProbabilityBot()
         bot.book = ProfileBook(Path("no-such-profiles.json"))
-        for modifier in (None, "DUEL", "HUNGER_GAMES", "SPEEDRUN"):
-            state = self.musketeers_state()
-            state.rules = state_for(modifier).rules
-            if modifier == "SPEEDRUN":
-                state.ships = None
-            self.assertEqual(bot.choose_action(state, 150).type, "SHOOT", modifier)
-        sprung = self.musketeers_state()
-        sprung.opponent_shots = [(Cell(0, 0), "MINE"), (Cell(0, 1), "MINE")]
-        sprung.mines = {Cell(9, 9)}
-        self.assertNotEqual(bot.choose_action(sprung, 150).bonus, "MINE")
-        no_uses = self.musketeers_state()
-        no_uses.bonuses = {"DISTANCE": 3}
-        self.assertEqual(bot.choose_action(no_uses, 150).type, "SHOOT")
-        self.assertEqual(ProbabilityBot().choose_action(self.musketeers_state(), 150).type, "SHOOT")
+        def openings(opponent_bonuses, shots=()):
+            state = state_for()
+            state.opponent = {"kind": "REMOTE_BOT", "botId": "x", "bonuses": opponent_bonuses}
+            state.shots = list(shots)
+            return {bot.choose_action(state, 150).cell for _ in range(60)}
+        self.assertLessEqual(len(openings([])), 16)
+        self.assertLessEqual(len(openings([{"bonus": "SHIELD", "uses": 3}])), 16)
+        self.assertGreater(len(openings([{"bonus": "MINE", "uses": 2}])), 20)
+        stepped = [(Cell(9, 9), "MINE"), (Cell(9, 0), "MINE")]
+        self.assertLessEqual(len(openings([{"bonus": "MINE", "uses": 2}], stepped)), 16)
 
     def test_defended_cell_is_shot_again(self):
         state = state_for()
