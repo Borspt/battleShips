@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -31,7 +32,8 @@ def core_rules(rules: model.Rules) -> Rules:
     )
 
 
-PLAN_LOG = Path("logs/plans.jsonl")  # какой план выбран в каждой партии; читает python -m battleships.scouting --plans
+# Какой план выбран в каждой партии; читает python -m battleships.scouting --plans.
+PLAN_LOG = Path(os.environ.get("BATTLESHIPS_PLAN_LOG", "logs/plans.jsonl"))
 
 
 class ProbabilityBot:
