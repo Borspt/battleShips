@@ -4,6 +4,7 @@ import random
 import unittest
 
 import json
+import os
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -103,6 +104,20 @@ class ProbabilityBotTest(unittest.TestCase):
             with mock.patch.object(contract, "PLAN_LOG", Path(blocker.name) / "logs" / "plans.jsonl"):
                 state = state_for()
                 self.assertTrue(valid_placement(ProbabilityBot().place_ships_for_match(state), state.rules))
+
+    def setUp(self):
+        # Механику запросов проверяем при прежней цене в 1 очко: при ней окупается один запрос за партию.
+        patcher = mock.patch.object(ProbabilityBonusBot, "distance_price", 1)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_distance_is_spent_only_while_a_query_is_worth_its_price(self):
+        bot = ProbabilityBonusBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        self.assertEqual(bot.choose_action(self.endgame_state(), 150).type, "USE_BONUS")
+        for price, queries in ((2, 0), (1, 1), (0.5, 2)):
+            with mock.patch.object(ProbabilityBonusBot, "distance_price", price):
+                self.assertEqual(bot._distance_budget(self.endgame_state(), 0), queries, price)
 
     def endgame_state(self, opponent_hits=15):
         """Поле соперника обстреляно так, что остались два однопалубных в двух несвязанных зонах."""
@@ -286,12 +301,14 @@ class ProbabilityBotTest(unittest.TestCase):
 class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
     async def test_bonus_bot_answers_within_shell_budget(self):
         worker = StrategyWorker("battleships.strategies.contract:ProbabilityBonusBot")
+        os.environ["BATTLESHIPS_DISTANCE_PRICE"] = "1"  # рабочий процесс читает цену из окружения
         try:
             await worker.start()
             state = ProbabilityBotTest().endgame_state()
             action = await worker.call("choose_action", (state, 150), 0.15)
             self.assertEqual((action.type, action.bonus), ("USE_BONUS", "DISTANCE"))
         finally:
+            os.environ.pop("BATTLESHIPS_DISTANCE_PRICE", None)
             await worker.close()
 
     async def test_runs_in_shell_worker_process(self):
