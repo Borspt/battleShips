@@ -158,15 +158,12 @@ class ProbabilityBonusBot(ProbabilityBot):
     Без флага --allow-bonuses оболочка отклонит бонус и подставит запасной выстрел.
     """
 
-    # Цена запроса DISTANCE в очках рейтинга: с 17:30 10.10 — 2 (было 1). В MATCH_STARTED цены не приходят,
-    # смотреть GET /api/v1/rules; сменить без правки кода — переменная BATTLESHIPS_DISTANCE_PRICE при запуске.
-    distance_price = float(os.environ.get("BATTLESHIPS_DISTANCE_PRICE", "2"))
-    # Сколько очков рейтинга приносит первый, второй и третий запрос за партию при K = 20. В симуляторе против
-    # такого же бота без бонусов это +13, +8 и +4 п. п. к победе (2,7, 1,6 и 0,8 очка); на платформе два запроса
-    # в «Дуэли» дали +7 п. п. вместо +21, поэтому берём половину. Запрос тратится, пока он дороже своей цены.
-    distance_worth = (1.35, 0.8, 0.4)
-    # Решение команды от 10.10 17:58: DISTANCE выключен всегда, какой бы ни была цена.
+    # DISTANCE выключен 10.10 в 22:02. Плата за бонус уходит сопернику: два запроса — это −4 за партию,
+    # а разница между победой и поражением равна коэффициенту K (10 у «Нагибатора», 20 у «Хаки»). Чтобы
+    # окупиться, запросы должны поднимать шанс победы на 4/K — на 40 и 20 п.п.; за 19:52–20:00 бонусы
+    # стоили «Нагибатору» 76 очков при +19 за результаты.
     distance_enabled = False
+    max_distance_queries = 2  # в «Шрёдингере» три: там запрос ещё и отвечает, потоплен ли корабль
     # Сработавшая мина сжигает сопернику остаток хода и весь следующий. В «Трёх мушкетёрах» это около
     # четырёх промахов (+14 п. п. к победе) за 1 очко; в остальных режимах — один выстрел, в минус.
     mine_modifiers = frozenset({"THREE_MUSKETEERS"})
@@ -235,5 +232,5 @@ class ProbabilityBonusBot(ProbabilityBot):
             lost = len({cell for cell, result in state.opponent_shots if result in ("HIT", "SUNK")})
             if scored - lost >= self.safe_lead:
                 return 0
-        limit = sum(worth >= self.distance_price for worth in self.distance_worth)
+        limit = 3 if state.rules.modifier == "SCHRODINGER_SHIP" else self.max_distance_queries
         return max(0, min(state.bonuses.get("DISTANCE", 0), limit - used))

@@ -1,4 +1,5 @@
 import asyncio
+import os
 import json
 import logging
 import random
@@ -62,6 +63,24 @@ async def session_messages(ws, session, controller=None):
             return
         yield raw
 
+
+
+BETS_FILE = Path("scouting/bets.json")
+
+
+def choose_bet(setting: str, opponent: dict, path: Path | None = None) -> tuple[str, float]:
+    """Модификатор и размер ставки; ("", 0.0) — не ставить. Любая ошибка в настройке значит «не ставить»."""
+    try:
+        if setting != "FILE":
+            wanted, _, amount = setting.partition(":")
+            return wanted, float(amount)
+        table = json.loads((path or BETS_FILE).read_text(encoding="utf-8"))
+        team = opponent.get("teamName") or opponent.get("builtInBot") or ""
+        wanted, amount = next((bet for name, bet in (table.get("teams") or {}).items() if name in team),
+                              table["default"])
+        return str(wanted), float(amount)
+    except (OSError, ValueError, KeyError, TypeError):
+        return "", 0.0
 
 class Journal:
     def __init__(self, directory: str, token: str):
@@ -230,7 +249,15 @@ class Controller:
                 await self.place()
             return
         if kind == "BET_REQUESTED":
-            self.journal.write("bet_skipped", {"reason": "rating spending disabled"})
+            # «Казино „Рояль“»: ставка — пари на исход. Проигравший отдаёт свою ставку победителю, победитель
+            # свою сохраняет; бо́льшая ставка выбирает режим. Включается переменной BATTLESHIPS_BET:
+            # "МОДИФИКАТОР:очки" — одна ставка на всех, "FILE" — по соперникам из scouting/bets.json
+            # (файл перечитывается перед каждой ставкой). Без переменной не ставим.
+            wanted, amount = choose_bet(os.environ.get("BATTLESHIPS_BET", ""), msg.get("opponent") or {})
+            if wanted in (msg.get("modifiers") or []) and 0 < amount <= float(msg.get("maxAmount") or 0):
+                await self.emit({"type": "PLACE_BET", "modifier": wanted, "amount": amount})
+            else:
+                self.journal.write("bet_skipped", {"reason": "rating spending disabled", "offered": msg.get("modifiers")})
             return
         if self.state is None:
             return

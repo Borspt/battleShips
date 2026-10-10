@@ -3,6 +3,8 @@ import json
 import tempfile
 import time
 import unittest
+from unittest import mock
+import os
 from pathlib import Path
 
 from websockets.asyncio.server import serve
@@ -141,6 +143,32 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         await self.client.handle({"type": "FUTURE_MESSAGE", "data": 5})
         await self.client.handle({"type": "BET_REQUESTED", "maxAmount": 40})
         self.assertEqual(self.sent, [])
+
+    async def test_bet_is_placed_only_when_enabled_and_offered(self):
+        offer = {"type": "BET_REQUESTED", "modifiers": ["DUEL", "SPEEDRUN"], "maxAmount": 40.0, "betWindowSeconds": 5}
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "SPEEDRUN:2"}):
+            await self.client.handle(offer)
+            self.assertEqual(self.sent, [{"type": "PLACE_BET", "modifier": "SPEEDRUN", "amount": 2.0}])
+            self.sent.clear()
+            await self.client.handle(dict(offer, modifiers=["DUEL"]))        # нужного режима нет в списке
+            await self.client.handle(dict(offer, maxAmount=1.0))             # ставка больше разрешённой
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "SPEEDRUN:много"}):
+            await self.client.handle(offer)
+        self.assertEqual(self.sent, [])
+
+    async def test_bet_from_file_depends_on_opponent(self):
+        offer = {"type": "BET_REQUESTED", "modifiers": ["SPEEDRUN", "BIRD_BOX"], "maxAmount": 50.0,
+                 "opponent": {"kind": "REMOTE_BOT", "teamName": "Есть пробитие у кого-то", "rating": 1800.0}}
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "FILE"}):
+            await self.client.handle(offer)
+            await self.client.handle(dict(offer, opponent={"teamName": "Новая команда"}))
+        table = json.loads(Path("scouting/bets.json").read_text(encoding="utf-8"))
+        self.assertEqual([(m["modifier"], m["amount"]) for m in self.sent],
+                         [tuple(table["teams"]["Есть пробитие"]), tuple(table["default"])])
+
+    def test_broken_bet_file_means_no_bet(self):
+        from battleships.client import choose_bet
+        self.assertEqual(choose_bet("FILE", {"teamName": "x"}, Path("нет-такого-файла.json")), ("", 0.0))
 
     async def test_late_action_is_not_sent(self):
         await self.client.handle(started("SPEEDRUN"))
