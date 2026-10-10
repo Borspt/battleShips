@@ -40,9 +40,12 @@ class HakiEndgameStrategy(ProbabilityStrategy):
     MAX_COMBINATIONS = 100_000
     MAX_NODES = 100_000
 
-    def __init__(self, *args, search_ms=40.0, **kwargs):
+    def __init__(self, *args, search_ms=40.0, four_mixed=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.search_ms = search_ms
+        # Offline experiment only: current holdout/latency evidence does not
+        # justify enabling it in the live HakiObservationBot.
+        self.four_mixed = four_mixed
 
     def _infer_sunk(self):
         if not self.rules.no_touching or self.rules.announces_sunk:
@@ -71,6 +74,8 @@ class HakiEndgameStrategy(ProbabilityStrategy):
                     changed = True
 
     def _endgame_configs(self):
+        if len(self.remaining) == 4 and any(n != 1 for n in self.remaining):
+            return self._four_mixed_configs() if self.four_mixed else None
         if (len(self.remaining) <= 2 or
                 (len(self.remaining) <= ENDGAME_SHIPS and any(n != 1 for n in self.remaining))):
             return super()._endgame_configs()
@@ -118,6 +123,60 @@ class HakiEndgameStrategy(ProbabilityStrategy):
         try:
             visit(available, count, 0, 1.0)
             result = configs or None
+        except _SearchLimit:
+            result = None
+        self._config_key, self._config_value = key, result
+        return result
+
+    def _four_mixed_configs(self):
+        """Complete four-ship posterior only; timed-out prefixes are discarded.
+
+        Hidden, possibly sunk hit groups make DISTANCE semantics ambiguous. Keep
+        the ordinary hunt/finish policy until their fate has been proved.
+        """
+        if not self.rules.no_touching or self.hits or self.search_ms <= 0:
+            return None
+        key = (self.empty, self.sunk, tuple(self.remaining), tuple(self.distances))
+        if getattr(self, '_config_key', None) == key:
+            return self._config_value
+        deadline = time.monotonic() + self.search_ms / 1000
+        lengths = sorted(self.remaining, reverse=True)
+        rows, columns = self.rules.rows, self.rules.columns
+        tables = {n: placement_distances(rows, columns, n) for n in set(lengths)}
+        checks = [(q, d, any(abs(i // columns - q // columns) +
+                            abs(i % columns - q % columns) == d
+                            for i in bits(self.sunk))) for q, d in self.distances]
+        options = {}
+        for length in set(lengths):
+            priors = self._priors(length)
+            options[length] = [
+                (mask, around, number, priors[number] if priors else 1.0)
+                for number, (mask, around, _) in enumerate(placements(rows, columns, length))
+                if not mask & (self.empty | self.sunk)
+                and all(tables[length][number][q] >= d for q, d, _ in checks)]
+        configs, nodes = [], 0
+
+        def visit(position, occupied, forbidden, weight, chosen):
+            nonlocal nodes
+            nodes += 1
+            if nodes > self.MAX_NODES or (nodes % 64 == 1 and time.monotonic() >= deadline):
+                raise _SearchLimit
+            if position == 4:
+                if all(explained or min(tables[n][i][q] for n, i in chosen) == d
+                       for q, d, explained in checks):
+                    configs.append((occupied, weight, chosen))
+                return
+            length = lengths[position]
+            lower = chosen[-1][1] if position and lengths[position - 1] == length else -1
+            for mask, around, number, prior in options[length]:
+                if number > lower and not mask & forbidden:
+                    visit(position + 1, occupied | mask, forbidden | mask | around,
+                          weight * prior, chosen + ((length, number),))
+        try:
+            visit(0, 0, 0, 1.0, ())
+            result = configs or None
+            if time.monotonic() >= deadline:
+                result = None
         except _SearchLimit:
             result = None
         self._config_key, self._config_value = key, result
@@ -210,7 +269,11 @@ class HakiObservationBot(ProbabilityBot):
                 shooter.on_distance((row, column), distance)
         # Оставляем время на обычный расчёт, сериализацию и ответ процессу оболочки.
         remaining_ms = time_budget_ms - (time.monotonic() - started) * 1000 - 30
-        shooter.search_ms = max(0.0, min(40.0, remaining_ms))
+        # Four mixed ships may need slightly more enumeration time. Leave at
+        # least 45 ms for query selection/weights in addition to the 30 ms reserve.
+        four_mixed = shooter.four_mixed and len(shooter.remaining) == 4 and any(n != 1 for n in shooter.remaining)
+        shooter.search_ms = (max(0.0, min(55.0, remaining_ms - 45)) if four_mixed
+                             else max(0.0, min(40.0, remaining_ms)))
         if remaining_ms >= 50:
             shooter.distance_uses = self._distance_budget(state, len(answers))
         kind, cell = shooter.next_action()
