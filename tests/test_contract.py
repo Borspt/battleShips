@@ -3,11 +3,15 @@
 import random
 import unittest
 
+import json
+import tempfile
 from pathlib import Path
+from unittest import mock
 
 from battleships.model import Action, Cell, GameState, OpponentInfo, Rules, valid_action, valid_placement
 from battleships.simulator import Board
 from battleships.strategies.adaptation import ProfileBook
+from battleships.strategies import contract
 from battleships.strategies.contract import ProbabilityBot
 from battleships.worker import StrategyWorker
 from tests.fixtures import started
@@ -70,6 +74,35 @@ class ProbabilityBotTest(unittest.TestCase):
         self.assertFalse(all(long_on_border(bot.place_ships_for_match(remote)) for _ in range(20)))
         for state in (hard, remote, strong, recovered):
             self.assertTrue(valid_placement(bot.place_ships_for_match(state), state.rules))
+
+    def test_chosen_plan_is_recorded_once_per_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "logs" / "plans.jsonl"
+            with mock.patch.object(contract, "PLAN_LOG", log):
+                bot = ProbabilityBot()
+                bot.book = ProfileBook(Path("no-such-profiles.json"))
+                hard = state_for()
+                hard.opponent_info = OpponentInfo(key="builtin:HARD", built_in_bot="HARD", rating=1430.5)
+                hard.ships = bot.place_ships_for_match(hard)
+                bot.choose_action(hard, 150)
+                hard.shots = [(Cell(0, 0), "MISS")]
+                bot.choose_action(hard, 150)
+                speedrun = state_for("SPEEDRUN")
+                bot.choose_action(speedrun, 150)
+                speedrun.shots = [(Cell(0, 0), "MISS")]
+                bot.choose_action(speedrun, 150)
+            records = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(r["opponent"], r["placement"], r["modifier"]) for r in records],
+                         [("builtin:HARD", "edge_placement", None), ("builtin:EASY", None, "SPEEDRUN")])
+        self.assertEqual((records[0]["strategy"], records[0]["opponentRating"], records[0]["edgeBias"]["corner"]),
+                         ("ProbabilityBot", 1430.5, 12.0))
+        self.assertIn("HARD", records[0]["reason"])
+
+    def test_unwritable_plan_log_does_not_break_the_move(self):
+        with tempfile.NamedTemporaryFile() as blocker:
+            with mock.patch.object(contract, "PLAN_LOG", Path(blocker.name) / "logs" / "plans.jsonl"):
+                state = state_for()
+                self.assertTrue(valid_placement(ProbabilityBot().place_ships_for_match(state), state.rules))
 
     def test_defended_cell_is_shot_again(self):
         state = state_for()

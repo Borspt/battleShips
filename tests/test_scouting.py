@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from battleships.model import OpponentInfo
-from battleships.scouting import build_profiles, profile_for, save_profiles, load_profiles
+from battleships.scouting import plan_results, plans_table, build_profiles, profile_for, save_profiles, load_profiles
 from tests.fixtures import rules
 
 
@@ -76,6 +76,18 @@ class ScoutingTest(unittest.TestCase):
         profiles = build_profiles(self.store)
         self.assertEqual((profiles["bot:bot-a"]["rating"], profiles["bot:bot-a"]["botName"]), (1620.0, "Squid 2"))
         self.assertEqual((profiles["bot:bot-z"]["matches"], profiles["bot:bot-z"]["rating"]), (0, 1500.0))
+
+    def test_plan_records_are_joined_with_match_outcomes(self):
+        log = self.store / "plans.jsonl"
+        record = lambda at, opponent: json.dumps({"at": at, "strategy": "ProbabilityBot", "opponent": opponent, "opponentRating": None,
+                                                  "modifier": None, "placement": "edge_placement", "edgeBias": None, "reason": "r"})
+        log.write_text("\n".join([record("2026-10-10T10:00:01.300000+00:00", "builtin:HARD"),  # матч 01, победа Kraken
+                                  record("2026-10-10T10:00:02.300000+00:00", "builtin:HARD"),  # матч 02, поражение
+                                  record("2026-10-10T12:00:00+00:00", "builtin:HARD")]),    # матча в реплеях нет
+                       encoding="utf-8")
+        results = plan_results(self.store, log, team="Kraken")
+        self.assertEqual([r["match"] and r["match"]["outcome"] for r in results], ["win", "loss", None])
+        self.assertIn("по краям", plans_table(results))
 
     def test_lookup_by_match_started_opponent(self):
         path = self.store / "shared" / "profiles.json"

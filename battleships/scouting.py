@@ -6,6 +6,7 @@
     python -m battleships.scouting            # докачать новые матчи, пересобрать профили, показать таблицу
     python -m battleships.scouting --offline  # только пересобрать из уже скачанного
     python -m battleships.scouting --bot Kraken
+    python -m battleships.scouting --plans    # какие планы выбирал наш бот и чем кончились партии
 
 Вход — учётная запись участника из BATTLESHIPS_LOGIN и BATTLESHIPS_PASSWORD (файл .env).
 Скачанные реплеи лежат в runtime/scouting/ и в репозиторий не попадают: это десятки мегабайт.
@@ -247,6 +248,53 @@ def profile_for(profiles: dict[str, dict], opponent) -> dict | None:
     return profiles.get(opponent.key) if opponent.key else None
 
 
+def plan_results(store: Path = STORE, plan_log: Path = Path("logs/plans.jsonl"), team: str = "") -> list[dict]:
+    """Сводит записи о выбранных планах с исходами матчей нашей команды.
+
+    Запись делается в момент расстановки, матч на платформе начинается на несколько секунд раньше;
+    пара ищется по ключу соперника и времени.
+    """
+    ours = []
+    for path in (store / "matches").glob("*.json"):
+        match = json.loads(path.read_text(encoding="utf-8"))
+        for side in match["sides"]:
+            if side.get("name") == team:
+                opponent = next(s for s in match["sides"] if s is not side)
+                outcome = "draw" if match.get("winner") is None else "win" if match["winner"] == side["seat"] else "loss"
+                ours.append({"start": datetime.fromisoformat(match["startedAt"]), "opponent": _key(opponent),
+                             "opponentName": opponent.get("botName") or opponent.get("builtInBot"),
+                             "bot": side.get("botName"), "outcome": outcome, "endReason": match.get("endReason"), "used": False})
+    results = []
+    if not plan_log.exists():
+        return results
+    for line in plan_log.read_text(encoding="utf-8").splitlines():
+        record = json.loads(line)
+        at = datetime.fromisoformat(record["at"])
+        candidates = [m for m in ours if not m["used"] and m["opponent"] == record["opponent"]
+                      and -5 <= (at - m["start"]).total_seconds() <= 30]
+        match = min(candidates, key=lambda m: abs((at - m["start"]).total_seconds()), default=None)
+        if match:
+            match["used"] = True
+        results.append(record | {"match": match})
+    return results
+
+
+def plans_table(results: list[dict]) -> str:
+    names = {"random_placement": "случайная", "edge_placement": "по краям", "interior_placement": "внутри", None: "нет («Спидран»)"}
+    groups: dict[tuple, Counter] = {}
+    for record in results:
+        bias = record["edgeBias"]
+        label = (names.get(record["placement"], record["placement"]), f"{bias['edge']:g}/{bias['corner']:g}" if bias else "нет")
+        outcome = record["match"]["outcome"] if record["match"] else "unknown"
+        groups.setdefault(label, Counter())[outcome] += 1
+    lines = ["расстановка        поправка | партий побед поражений ничьих  исход неизвестен | побед%"]
+    for (placement, bias), c in sorted(groups.items()):
+        known = c["win"] + c["loss"] + c["draw"]
+        rate = f"{100 * c['win'] / known:5.0f}" if known else "    —"
+        lines.append(f"{placement:18} {bias:>8} | {sum(c.values()):6d} {c['win']:5d} {c['loss']:9d} {c['draw']:6d} {c['unknown']:17d} | {rate}")
+    return "\n".join(lines)
+
+
 def _percent(value) -> str:
     return "  —" if value is None else f"{value * 100:3.0f}"
 
@@ -290,6 +338,7 @@ def main() -> None:
     parser.add_argument("--max-new", type=int, default=400, help="сколько новых матчей скачать за запуск")
     parser.add_argument("--full", action="store_true", help="пройти весь список матчей, а не только новые сверху")
     parser.add_argument("--bot", help="показать карточку бота: часть имени бота или команды")
+    parser.add_argument("--plans", action="store_true", help="показать, какие планы выбирал наш бот и чем кончились партии")
     parser.add_argument("--team", default="Нейро Мугивары", help="наша команда — для счёта личных встреч")
     parser.add_argument("--env-file", default=".env")
     args = parser.parse_args()
@@ -314,7 +363,14 @@ def main() -> None:
     else:  # реплеев нет — показываем профили из репозитория и не затираем их
         profiles = load_profiles()
         print(f"Реплеев на диске нет, показаны профили из {PROFILES}: ботов {len(profiles)}")
-    if args.bot:
+    if args.plans:
+        results = plan_results(STORE, team=args.team)
+        print(plans_table(results))
+        for record in results[-15:]:
+            match = record["match"] or {}
+            print(f"  {record['at'][11:19]} {match.get('opponentName') or record['opponent']}: {record['placement']}, "
+                  f"{match.get('outcome', 'исход неизвестен')} — {record['reason']}")
+    elif args.bot:
         needle = args.bot.lower()
         for profile in profiles.values():
             if needle in f"{profile['botName']} {profile['team']}".lower():
