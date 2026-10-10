@@ -11,6 +11,7 @@ from battleships.strategies.adaptation import MEDIUM_BIAS, ProfileBook, choose_p
 from battleships.strategies.probability import HARD_BIAS
 
 REMOTE = OpponentInfo(key="bot:a", bot_id="a")
+BUILT_IN = OpponentInfo(key="builtin:MEDIUM", built_in_bot="MEDIUM")
 
 
 def profile(**values):
@@ -45,20 +46,17 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertIsNone(choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0)).edge_bias)
         self.assertIsNone(choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0, vsBots=versus_bots(placements=2, longShipsOnBorder=1.0))).edge_bias)
 
-    def test_placement_avoids_where_opponent_shoots_first(self):
-        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=0.05)).placement, edge_placement)
-        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=0.6)).placement, random_placement)
-        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=0.5, vsBots=versus_bots(openingOnBorder=0.95))).placement, interior_placement)
+    def test_placement_adapts_only_to_built_in_bots(self):
+        self.assertEqual(choose_plan(None, BUILT_IN, profile(openingOnBorder=0.05)).placement, edge_placement)
+        self.assertEqual(choose_plan(None, BUILT_IN, profile(openingOnBorder=0.95)).placement, interior_placement)
+        self.assertEqual(choose_plan(None, BUILT_IN, profile(openingOnBorder=0.6)).placement, random_placement)
 
-    def test_edge_shooting_seen_only_against_built_in_bots_does_not_move_fleet_inside(self):
-        """Бить с краёв по флоту HARD выгодно всем; это не значит, что так же стреляют по нам."""
-        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=1.0)).placement, random_placement)
-        few = versus_bots(matches=2, openingOnBorder=1.0)
-        self.assertEqual(choose_plan(None, REMOTE, profile(openingOnBorder=1.0, vsBots=few)).placement, random_placement)
-
-    def test_habits_against_team_bots_override_overall_habits(self):
-        plan = choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0, openingOnBorder=0.05, vsBots=versus_bots(openingOnBorder=0.6)))
-        self.assertEqual((plan.placement, plan.edge_bias), (random_placement, None))
+    def test_placement_against_team_bots_is_always_random(self):
+        """Боты команд видят наши реплеи и подстраиваются: предсказуемая расстановка против них проигрывает."""
+        for opening in (0.0, 0.05, 0.5, 0.95, 1.0):
+            for versus in (None, versus_bots(openingOnBorder=opening)):
+                plan = choose_plan(None, REMOTE, profile(openingOnBorder=opening, vsBots=versus))
+                self.assertEqual(plan.placement, random_placement)
 
     def test_small_samples_are_ignored(self):
         small = versus_bots(placements=3, matches=3, longShipsOnBorder=1.0, openingOnBorder=1.0)
