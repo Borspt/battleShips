@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from websockets.asyncio.server import serve
+from websockets.protocol import State
 from battleships.client import run_bot
 from battleships.haki_rating import HakiRatingGate
 from battleships.haki_session import HAKI_STRATEGY, HakiSession
@@ -45,7 +46,7 @@ class RatingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await gate.after_match(), 'RATING_UNAVAILABLE')
 
     async def test_ranked_socket_continues_after_two_losses_and_stops_at_zero(self):
-        commands, errors = [], []
+        commands, errors, connections = [], [], []
         snapshots = iter([1500,1490,1495,1505,1500])
         calls = []
         async def gate_start(gate):
@@ -53,22 +54,27 @@ class RatingTests(unittest.IsolatedAsyncioTestCase):
             await original_start(gate)
         def lookup(_):
             calls.append(1)
+            if len(calls) > 1:
+                self.assertTrue(all(ws.state == State.CLOSED for ws in connections),
+                                'Rating HTTP work must happen after socket closure')
             return {'rating':next(snapshots),'matchCount':100+len(calls)}
         original_start = HakiRatingGate.start
         async def server_handler(ws):
+            connections.append(ws)
             try:
                 commands.append(json.loads(await ws.recv()))
                 await ws.send(json.dumps({'type':'MODE_CHANGED','mode':'RANKING'}))
-                for index, outcome in enumerate(('LOSS','LOSS','WIN','LOSS')):
-                    await ws.send(json.dumps(match({'kind':'REMOTE_BOT'})))
-                    await ws.send(json.dumps({'type':'TURN_REQUESTED','moveNumber':1,
-                        'shotsLeft':20,'shotsLeftInTurn':1}))
-                    commands.append(json.loads(await ws.recv()))
-                    await ws.send(json.dumps({'type':'MATCH_FINISHED','outcome':outcome,
-                        'endReason':'SHOT_LIMIT'}))
-                await ws.send(json.dumps(match()))
-                async for unexpected in ws:
-                    errors.append(unexpected)
+                outcome = ('LOSS','LOSS','WIN','LOSS')[len(connections)-1]
+                await ws.send(json.dumps(match({'kind':'REMOTE_BOT'})))
+                await ws.send(json.dumps({'type':'TURN_REQUESTED','moveNumber':1,
+                    'shotsLeft':20,'shotsLeftInTurn':1}))
+                commands.append(json.loads(await ws.recv()))
+                await ws.send(json.dumps({'type':'MATCH_FINISHED','outcome':outcome,
+                    'endReason':'SHOT_LIMIT'}))
+                # Matchmaker would assign a new game while rating HTTP runs.
+                # The client must already be disconnected before that request.
+                await ws.wait_closed()
+                self.assertEqual(ws.state, State.CLOSED)
             except Exception as exc:
                 errors.append(type(exc).__name__)
         with tempfile.TemporaryDirectory() as directory:
@@ -81,6 +87,7 @@ class RatingTests(unittest.IsolatedAsyncioTestCase):
                         log_dir=directory,budget_ms=150,reserve_ms=250,allow_bonuses=False),10)
         self.assertEqual(errors, [])
         self.assertEqual(sum(c['type']=='SHOOT' for c in commands),4)
+        self.assertEqual(len(connections),4)
 
     def test_short_hunger_game_conserves_shots(self):
         message = started('HUNGER_GAMES')
