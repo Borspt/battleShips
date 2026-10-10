@@ -12,6 +12,19 @@ from battleships.haki_supervisor import bot_command, journal_summary, supervise,
 
 
 class HakiPanelTests(unittest.TestCase):
+    def test_later_platform_games_do_not_rewrite_stopped_series_gain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manager = Manager(directory)
+            manager.rating = 1673
+            state = {'seriesId':'abc', 'status':'stopped', 'ratingBefore':1541,
+                     'ratingCurrent':1539, 'ratingAfterDisconnect':1528}
+            with patch.object(manager, 'current', return_value=(None,state)), \
+                 patch.object(manager, 'refresh_rating'), \
+                 patch.object(manager, 'processes', return_value=([],None)):
+                result = manager.status()
+            self.assertEqual(result['rating'],1673)
+            self.assertEqual(result['ratingDelta'],-13)
+
     def test_windows_reader_lock_does_not_abort_snapshot_update(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'state.json'
