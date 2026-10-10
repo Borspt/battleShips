@@ -156,6 +156,20 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
             await self.client.handle(offer)
         self.assertEqual(self.sent, [])
 
+    async def test_bet_from_file_depends_on_opponent(self):
+        offer = {"type": "BET_REQUESTED", "modifiers": ["SPEEDRUN", "BIRD_BOX"], "maxAmount": 50.0,
+                 "opponent": {"kind": "REMOTE_BOT", "teamName": "Есть пробитие у кого-то", "rating": 1800.0}}
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "FILE"}):
+            await self.client.handle(offer)
+            await self.client.handle(dict(offer, opponent={"teamName": "Новая команда"}))
+        table = json.loads(Path("scouting/bets.json").read_text(encoding="utf-8"))
+        self.assertEqual([(m["modifier"], m["amount"]) for m in self.sent],
+                         [tuple(table["teams"]["Есть пробитие"]), tuple(table["default"])])
+
+    def test_broken_bet_file_means_no_bet(self):
+        from battleships.client import choose_bet
+        self.assertEqual(choose_bet("FILE", {"teamName": "x"}, Path("нет-такого-файла.json")), ("", 0.0))
+
     async def test_late_action_is_not_sent(self):
         await self.client.handle(started("SPEEDRUN"))
         self.client.turn_deadline = time.monotonic() - 1
