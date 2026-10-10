@@ -10,7 +10,7 @@ from ..geometry import placement_distances
 from ..placement import random_placement
 from .adaptation import Plan, choose_plan
 from .contract import ProbabilityBot, core_rules
-from .probability import ProbabilityStrategy
+from .probability import ProbabilityStrategy, MIN_QUERY_BITS
 from .haki_memory import HakiBook
 
 
@@ -44,10 +44,24 @@ class HakiEndgameStrategy(ProbabilityStrategy):
         super().__init__(*args, **kwargs)
         self.search_ms = search_ms
 
+    def next_action(self):
+        if (self.rules.modifier == 'SCHRODINGER_SHIP' and self.distance_uses > 0
+                and not self.hits and not self.known_ship):
+            # All observed hits have been proved sunk by geometry/fleet lengths.
+            # Only in this state do our remaining ships equal the server's afloat
+            # fleet. An unresolved HIT may already be a destroyed ship: DISTANCE
+            # must not be interpreted against that uncertain fleet.
+            configs = self._endgame_configs()
+            if configs and len(configs) > 1:
+                index, information = self._best_query(configs)
+                if information >= MIN_QUERY_BITS:
+                    return 'DISTANCE', divmod(index, self.rules.columns)
+        return super().next_action()
+
     def _endgame_configs(self):
         if len(self.remaining) <= 2:
             return super()._endgame_configs()
-        if (not self.rules.no_touching or self.hits or not self.rules.announces_sunk
+        if (not self.rules.no_touching or self.hits
                 or len(self.remaining) > 4 or any(n != 1 for n in self.remaining)):
             return None
         key = (self.empty, self.sunk, tuple(self.remaining), tuple(self.distances))
@@ -169,7 +183,8 @@ class HakiObservationBot(ProbabilityBot):
         plan = self.plan(state)
         if state.ships is None and not state.shots:
             self._record(state, plan, placed=False)
-        shooter = HakiEndgameStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias)
+        shooter = HakiEndgameStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
+                                     spread=self._spread(state))
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE"]
