@@ -10,7 +10,7 @@ from ..geometry import placement_distances
 from ..placement import random_placement
 from .adaptation import Plan, choose_plan
 from .contract import ProbabilityBot, core_rules
-from .probability import ProbabilityStrategy, MIN_QUERY_BITS
+from .probability import ProbabilityStrategy, MIN_QUERY_BITS, ENDGAME_SHIPS
 from .haki_memory import HakiBook
 
 
@@ -59,7 +59,8 @@ class HakiEndgameStrategy(ProbabilityStrategy):
         return super().next_action()
 
     def _endgame_configs(self):
-        if len(self.remaining) <= 2:
+        if (len(self.remaining) <= 2 or
+                (len(self.remaining) <= ENDGAME_SHIPS and any(n != 1 for n in self.remaining))):
             return super()._endgame_configs()
         if (not self.rules.no_touching or self.hits
                 or len(self.remaining) > 4 or any(n != 1 for n in self.remaining)):

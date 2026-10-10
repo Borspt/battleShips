@@ -40,6 +40,19 @@ def match(opponent=None):
 
 
 class HakiSessionTests(unittest.TestCase):
+    def test_two_total_losses_survive_wins_draws_and_reconnect(self):
+        session=HakiSession('RANKING','EASY',loss_limit=2)
+        for outcome in ('LOSS','WIN','DRAW','LOSS'):
+            session.connected()
+            session.observe({'type':'MODE_CHANGED','mode':'RANKING'})
+            session.observe(match({'kind':'REMOTE_BOT'}))
+            session.observe({'type':'MATCH_FINISHED','outcome':outcome})
+            losses=session.losses
+            session.observe({'type':'MATCH_FINISHED','outcome':outcome})
+            self.assertEqual(session.losses,losses)
+            self.assertEqual(session.should_stop,losses==2)
+        self.assertEqual(session.stop_reason,'LOSS_LIMIT')
+
     def test_three_wins_only_draws_and_duplicate_finishes_do_not_count(self):
         session = HakiSession('TRAINING', 'EASY')
         session.observe({'type': 'MODE_CHANGED', 'mode': 'TRAINING'})
@@ -162,6 +175,9 @@ class HakiTransportTests(unittest.IsolatedAsyncioTestCase):
                         await play(ws, 'LOSS', remote=True)
                     elif scenario == 'race':
                         await play(ws, 'WIN', remote=True)
+                    elif scenario == 'two_losses':
+                        for result in ('LOSS','WIN','DRAW','LOSS'):
+                            await play(ws,result)
                     else:
                         await play(ws, 'LOSS')
                 # Сообщения следующей игры, уже стоящие в очереди, не должны
@@ -175,7 +191,8 @@ class HakiTransportTests(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.TemporaryDirectory() as temp:
             def session(mode, opponent):
-                return HakiSession(mode, opponent, idle_timeout=timeout)
+                return HakiSession(mode, opponent, idle_timeout=timeout,
+                                   loss_limit=2 if scenario=='two_losses' else 1)
             with patch('battleships.client.StrategyWorker', LocalWorker), \
                  patch('battleships.client.HakiSession', session):
                 async with serve(handler, '127.0.0.1', 0) as server:
@@ -201,6 +218,13 @@ class HakiTransportTests(unittest.IsolatedAsyncioTestCase):
         commands, records = await self.run_case('loss')
         self.assertEqual(len(commands), 2)
         self.assertTrue(any(r['event'] == 'stop_on_loss' for r in records))
+
+    async def test_two_total_losses_stop_without_extra_match(self):
+        commands, records=await self.run_case('two_losses')
+        self.assertEqual(sum(c['type']=='SHOOT' for c in commands),4)
+        stopped=[r for r in records if r['event']=='stop_on_loss']
+        self.assertEqual(len(stopped),1)
+        self.assertEqual(stopped[0]['data']['losses'],2)
 
     async def test_rejection_and_idle_timeout_do_not_fall_back_to_ranking(self):
         for case in ('reject', 'timeout'):

@@ -22,6 +22,11 @@ def hidden_endgame():
 
 
 class SchrodingerTest(unittest.TestCase):
+    def test_three_mixed_ships_inherit_boris_endgame_threshold(self):
+        shooter=HakiEndgameStrategy(Rules(rows=4,columns=5,fleet=(2,1,1)),distance_uses=2)
+        self.assertTrue(shooter._endgame_configs())
+        self.assertEqual(shooter.next_action()[0],'DISTANCE')
+
     def test_distance_works_after_proved_sinks_without_any_sunk_message(self):
         state=hidden_endgame()
         action=HakiObservationBot().choose_action(state,150)
