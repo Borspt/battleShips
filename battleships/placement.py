@@ -93,6 +93,21 @@ def evasive_placement(rules: Rules, rng: random.Random, danger: dict[Cell, float
     return rng.choice(pool[:keep])
 
 
+def border_heavy_placement(rules: Rules, rng: random.Random, candidates: int = 240, keep: int = 12) -> list[Ship]:
+    """Случайная расстановка, в которой длинные корабли чаще стоят у края, а однопалубные — внутри.
+
+    Против «Низких ожиданий»: 10.10 в «Птичьем коробе» наш случайный флот с 9+ клетками длинных кораблей
+    на краю они топили за 49,8 выстрела, с 0–4 — за 43,3 (168 партий). Берём случайную из лучших среди
+    случайных расстановок, а не флот «как у HARD»: тот легко узнать и выучить.
+    """
+    def score(ships: list[Ship]) -> int:
+        edge = lambda cell: cell[0] in (0, rules.rows - 1) or cell[1] in (0, rules.columns - 1)
+        return sum(edge(cell) * (1 if len(ship) > 1 else -2) for ship in ships for cell in ship)
+
+    pool = sorted((random_placement(rules, rng) for _ in range(candidates)), key=score, reverse=True)
+    return rng.choice(pool[:keep])
+
+
 PLACEMENTS = {"random": random_placement, "edges": edge_placement, "interior": interior_placement}
 
 

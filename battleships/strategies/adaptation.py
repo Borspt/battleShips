@@ -8,7 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable
 
-from ..placement import edge_placement, evasive_placement, interior_placement, random_placement
+from ..placement import border_heavy_placement, edge_placement, evasive_placement, interior_placement, random_placement
 from ..scouting import PROFILES, profile_for
 from .probability import HARD_BIAS, EdgeBias
 
@@ -23,6 +23,7 @@ MIN_MATCHES = 5
 # При случайной расстановке у края 47% однопалубных. На 164 расстановках «Низких ожиданий» (73% у края)
 # поправка экономит 2,3 выстрела, против случайной расстановки она же стоит 2,5 — поэтому порог высокий.
 SINGLES_SHARE = 0.6
+BORDER_HEAVY_AGAINST = ("Низкие ожидания",)
 # «Спидран»: где встроенный HARD ставит однопалубные — доли на 10 000 по 3999 его расстановкам из реплеев,
 # усреднённые по симметриям поля. На краю их не бывает, чаще всего — клетки (2,3), (3,2) и симметричные.
 # На 300 расстановках HARD это 50,2 выстрела до потопления вместо 52,6 с одной поправкой на края.
@@ -135,6 +136,12 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
         elif not profile and opponent.built_in_bot == "HARD":
             placement = edge_placement
             reasons.append("встроенный HARD стреляет от центра")
+
+    # «Низкие ожидания» ищут флот внутри поля: чем больше клеток длинных кораблей на краю, тем дольше он живёт
+    # (см. border_heavy_placement). В «Голодных играх» работает своё правило ниже, в «Спидране» флот не наш.
+    if modifier not in ("SPEEDRUN", "HUNGER_GAMES") and (profile or {}).get("team") in BORDER_HEAVY_AGAINST:
+        placement = border_heavy_placement
+        reasons.append("длинные корабли ближе к краю: так наш флот у этой команды живёт на 3–6 выстрелов дольше")
 
     # «Голодные игры»: выстрелов мало, флот никто не топит, считаются попадания. Прячем корабли от
     # первых выстрелов этого соперника, а если его не знаем — от первых выстрелов всех ботов в среднем.

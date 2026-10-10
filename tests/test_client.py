@@ -157,7 +157,8 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sent, [])
 
     async def test_bet_from_file_depends_on_opponent(self):
-        offer = {"type": "BET_REQUESTED", "modifiers": ["SPEEDRUN", "BIRD_BOX"], "maxAmount": 50.0,
+        offer = {"type": "BET_REQUESTED", "maxAmount": 50.0, "modifiers": [
+            "DUEL", "THREE_MUSKETEERS", "SCHRODINGER_SHIP", "HUNGER_GAMES", "SPEEDRUN", "BIRD_BOX"],
                  "opponent": {"kind": "REMOTE_BOT", "teamName": "Есть пробитие у кого-то", "rating": 1800.0}}
         with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "FILE"}):
             await self.client.handle(offer)
