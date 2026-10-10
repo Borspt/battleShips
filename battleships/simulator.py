@@ -6,7 +6,7 @@ import random
 from dataclasses import dataclass
 from typing import Callable
 
-from .placement import Ship, random_placement, validate_placement
+from .placement import Ship, edge_placement, validate_placement
 from .rules import Cell, Rules
 from .strategies import Strategy
 
@@ -75,7 +75,7 @@ def play_match(rules: Rules, first: StrategyFactory, second: StrategyFactory, rn
     players = [first(rules, random.Random(rng.random())), second(rules, random.Random(rng.random()))]
 
     if not rules.places_fleet:
-        ships = random_placement(rules, rng)
+        ships = edge_placement(rules, rng)  # платформа расставляет флот, как встроенный HARD
         solo = [play_solo(rules, player, ships) for player in players]
         score = [(not s.destroyed, s.shots, -s.hits) for s in solo]  # меньше — лучше
         winner = None if score[0] == score[1] else int(score[1] < score[0])

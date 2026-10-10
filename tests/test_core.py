@@ -3,10 +3,12 @@
 import random
 import unittest
 
-from battleships.placement import random_placement, validate_placement
+from battleships.geometry import border_mask
+from battleships.placement import edge_placement, random_placement, validate_placement
 from battleships.rules import DEFAULT_FLEET, Rules
 from battleships.simulator import Board, play_match, play_solo
 from battleships.strategies import STRATEGIES, BaselineStrategy, ProbabilityStrategy
+from battleships.strategies.probability import HARD_BIAS
 
 # Пример rules из сообщения MATCH_STARTED в справочнике протокола.
 MATCH_STARTED_RULES = {
@@ -40,6 +42,22 @@ class PlacementTest(unittest.TestCase):
         for rules in (Rules(), Rules(rows=8, columns=12, fleet=(5, 4, 3, 3, 2)), Rules(no_touching=False)):
             for _ in range(300):
                 self.assertIsNone(validate_placement(rules, random_placement(rules, rng)))
+
+    def test_edge_placement_keeps_long_ships_on_border_and_singles_inside(self):
+        rng = random.Random(9)
+        rules = Rules()
+        on_border = lambda cell: bool(border_mask(10, 10) >> (cell[0] * 10 + cell[1]) & 1)
+        for _ in range(300):
+            ships = edge_placement(rules, rng)
+            self.assertIsNone(validate_placement(rules, ships))
+            for ship in ships:
+                self.assertTrue(all(on_border(c) for c in ship) if len(ship) > 1 else not on_border(ship[0]))
+
+    def test_edge_placement_falls_back_when_border_is_too_small(self):
+        rules = Rules(rows=5, columns=5, fleet=(3, 2, 1, 1))
+        rng = random.Random(2)
+        for _ in range(100):
+            self.assertIsNone(validate_placement(rules, edge_placement(rules, rng)))
 
     def test_validation_reports_platform_reasons(self):
         rules = Rules(fleet=(2, 1))
@@ -83,6 +101,20 @@ class ShootingTest(unittest.TestCase):
         shots = [play_solo(rules, ProbabilityStrategy(rules, random.Random(rng.random())),
                            random_placement(rules, rng)).shots for _ in range(300)]
         self.assertLess(sum(shots) / len(shots), 57)
+
+    def test_edge_bias_finds_border_fleet_faster(self):
+        rules = Rules()
+        mean = {}
+        for name, bias in (("neutral", None), ("biased", HARD_BIAS)):
+            rng = random.Random(21)
+            shots = [play_solo(rules, ProbabilityStrategy(rules, random.Random(rng.random()), bias),
+                               edge_placement(rules, rng)).shots for _ in range(150)]
+            mean[name] = sum(shots) / len(shots)
+        self.assertLess(mean["biased"], mean["neutral"] - 5)
+
+    def test_edge_bias_opens_in_a_corner(self):
+        shooter = ProbabilityStrategy(Rules(), random.Random(1), HARD_BIAS)
+        self.assertIn(shooter.next_shot(), {(0, 0), (0, 9), (9, 0), (9, 9)})
 
     def test_defended_cell_is_shot_again(self):
         shooter = ProbabilityStrategy(Rules(), random.Random(1))

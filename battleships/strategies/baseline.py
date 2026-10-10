@@ -7,8 +7,8 @@ from .base import Strategy
 
 
 class BaselineStrategy(Strategy):
-    def __init__(self, rules, rng=None):
-        super().__init__(rules, rng)
+    def __init__(self, rules, rng=None, **kwargs):
+        super().__init__(rules, rng, **kwargs)
         self.untried = [(row, column) for row in range(rules.rows) for column in range(rules.columns)]
         self.rng.shuffle(self.untried)
         self.targets: list[Cell] = []

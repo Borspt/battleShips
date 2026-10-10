@@ -43,6 +43,21 @@ class ProbabilityBotTest(unittest.TestCase):
                     state.shots.append((action.cell, result))
                     state.shots_left -= 1
 
+    def test_edge_bias_is_used_only_against_hard_and_in_speedrun(self):
+        border = lambda cell: cell.row in (0, 9) or cell.column in (0, 9)
+        hard = state_for()
+        hard.opponent = {"kind": "BUILT_IN_BOT", "builtInBot": "HARD"}
+        speedrun = state_for("SPEEDRUN")
+        remote = state_for()
+        remote.opponent = {"kind": "REMOTE_BOT", "botId": "x", "teamName": "Kraken", "builtInBot": None}
+        recovered = state_for()
+        recovered.opponent = {}
+        for _ in range(20):
+            self.assertTrue(border(ProbabilityBot().choose_action(hard, 150).cell))
+            self.assertTrue(border(ProbabilityBot().choose_action(speedrun, 150).cell))
+            self.assertFalse(border(ProbabilityBot().choose_action(remote, 150).cell))
+            self.assertFalse(border(ProbabilityBot().choose_action(recovered, 150).cell))
+
     def test_defended_cell_is_shot_again(self):
         state = state_for()
         state.shots = [(Cell(4, 4), "DEFENDED")]

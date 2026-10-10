@@ -8,9 +8,9 @@ from __future__ import annotations
 import random
 
 from .. import model
-from ..placement import random_placement
+from ..placement import edge_placement
 from ..rules import Rules
-from .probability import ProbabilityStrategy
+from .probability import HARD_BIAS, ProbabilityStrategy
 
 
 def core_rules(rules: model.Rules) -> Rules:
@@ -27,17 +27,26 @@ def core_rules(rules: model.Rules) -> Rules:
 
 
 class ProbabilityBot:
-    """Карта вероятностей. Памяти между вызовами нет: знания каждый раз собираются из state.shots."""
+    """Карта вероятностей. Памяти между вызовами нет: знания каждый раз собираются из state.shots.
+
+    Свой флот ставит по краям: стрелки, идущие от центра (в их числе встроенный HARD), находят его позже.
+    """
 
     def __init__(self):
         self.rng = random.Random()
 
     def place_ships(self, rules: model.Rules) -> list[list[model.Cell]]:
-        ships = random_placement(core_rules(rules), self.rng)
+        ships = edge_placement(core_rules(rules), self.rng)
         return [[model.Cell(row, column) for row, column in ship] for ship in ships]
 
     def choose_action(self, state: model.GameState, time_budget_ms: int) -> model.Action:
-        shooter = ProbabilityStrategy(core_rules(state.rules), self.rng)
+        shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=self._edge_bias(state))
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         return model.Action.shoot(model.Cell(*shooter.next_shot()))
+
+    @staticmethod
+    def _edge_bias(state: model.GameState):
+        """HARD ставит корабли по краям; в «Спидране» платформа расставляет флот так же, как он."""
+        against_hard = (state.opponent or {}).get("builtInBot") == "HARD"
+        return HARD_BIAS if against_hard or state.rules.modifier == "SPEEDRUN" else None
