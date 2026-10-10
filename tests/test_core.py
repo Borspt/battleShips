@@ -239,3 +239,16 @@ class ShootingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuadrantSinglesTest(unittest.TestCase):
+    def test_single_is_not_sought_in_a_quadrant_where_one_is_already_sunk(self):
+        from battleships.strategies.adaptation import SPEEDRUN_QUADRANT_PRIOR
+        rules = Rules(fleet=(1, 1, 1, 1), modifier="SPEEDRUN")
+        shooter = ProbabilityStrategy(rules, random.Random(1), single_prior=SPEEDRUN_QUADRANT_PRIOR, single_per_quadrant=True)
+        shooter.on_shot_result((2, 2), "SUNK")
+        for _ in range(30):
+            row, column = shooter.next_shot()
+            self.assertFalse(row < 5 and column < 5, (row, column))
+            self.assertTrue(1 <= row <= 8 and 1 <= column <= 8)
+            shooter.on_shot_result((row, column), "MISS")
