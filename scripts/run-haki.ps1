@@ -9,10 +9,12 @@ $repoDirectory = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $repoDirectory '.venv/Scripts/python.exe'
 Push-Location -LiteralPath $repoDirectory
 try {
+    & $pythonPath scripts/refresh_haki_memory.py
     & $pythonPath -u -m battleships --env-file .env.muzrob --token-env BATTLESHIPS_TOKEN_MUZROB `
         --strategy battleships.strategies.haki:HakiObservationBot --mode $Mode --opponent $Opponent `
         --log-dir logs/muzrob --stop-after $StopAfter --stop-on-loss --allow-bonuses
     $botExitCode = $LASTEXITCODE
+    & $pythonPath scripts/refresh_haki_memory.py
 } finally {
     Pop-Location
 }

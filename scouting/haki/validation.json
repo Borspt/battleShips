@@ -1,0 +1,105 @@
+{
+  "holdout": [
+    {
+      "bot": "Michelangelo",
+      "botId": "993a9f36-2711-49da-91c0-37e740851c61",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "002982ea-5745-458a-8e29-4da3e0429330",
+      "prior": 8,
+      "baseline": 54.85,
+      "adapted": 58.45
+    },
+    {
+      "bot": "Michelangelo",
+      "botId": "993a9f36-2711-49da-91c0-37e740851c61",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "9ff2595f-6c3a-4443-b57f-f54464e6d798",
+      "prior": 9,
+      "baseline": 44.8,
+      "adapted": 51
+    },
+    {
+      "bot": "Michelangelo",
+      "botId": "993a9f36-2711-49da-91c0-37e740851c61",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "88cd3ec0-492b-44b2-a95c-b5f970d172c5",
+      "prior": 10,
+      "baseline": 61,
+      "adapted": 64.45
+    },
+    {
+      "bot": "Raphael",
+      "botId": "4375650f-0085-471c-b1fb-cef3e2750066",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "31b59522-cb8f-41bf-b4b6-542d7b23d162",
+      "prior": 8,
+      "baseline": 53.3,
+      "adapted": 58.45
+    },
+    {
+      "bot": "Michelangelo",
+      "botId": "993a9f36-2711-49da-91c0-37e740851c61",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "e577b0d4-8d46-4d04-9c0c-726295e7d959",
+      "prior": 11,
+      "baseline": 59.8,
+      "adapted": 61.05
+    },
+    {
+      "bot": "Donatello",
+      "botId": "10ef34fa-dc01-47ba-9c61-3de57660e4fd",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "157c5b67-f3bf-4575-bde7-0acd18824f2d",
+      "prior": 8,
+      "baseline": 64.55,
+      "adapted": 60.65
+    },
+    {
+      "bot": "Raphael",
+      "botId": "4375650f-0085-471c-b1fb-cef3e2750066",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "97498763-80d6-45e2-acc4-78acd35bcda2",
+      "prior": 9,
+      "baseline": 56.4,
+      "adapted": 53.5
+    },
+    {
+      "bot": "Donatello",
+      "botId": "10ef34fa-dc01-47ba-9c61-3de57660e4fd",
+      "modifier": "THREE_MUSKETEERS",
+      "match": "ad6cef01-1d8c-4276-ba9c-ac7067a19e55",
+      "prior": 9,
+      "baseline": 57.25,
+      "adapted": 59
+    }
+  ],
+  "lossEndgame100Seeds": {
+    "0": {
+      "shots": 18,
+      "queries": 0,
+      "elapsedSeconds": 7.228129199997056
+    },
+    "2": {
+      "shots": 10.53,
+      "queries": 2,
+      "elapsedSeconds": 8.54678160000185
+    }
+  },
+  "policies": {
+    "10ef34fa-dc01-47ba-9c61-3de57660e4fd:THREE_MUSKETEERS": {
+      "approved": false,
+      "heldOutFleets": 2,
+      "meanShotsSaved": 1.0749999999999993
+    },
+    "4375650f-0085-471c-b1fb-cef3e2750066:THREE_MUSKETEERS": {
+      "approved": false,
+      "heldOutFleets": 2,
+      "meanShotsSaved": -1.1250000000000036
+    },
+    "993a9f36-2711-49da-91c0-37e740851c61:THREE_MUSKETEERS": {
+      "approved": false,
+      "heldOutFleets": 4,
+      "meanShotsSaved": -3.6250000000000018
+    }
+  }
+}

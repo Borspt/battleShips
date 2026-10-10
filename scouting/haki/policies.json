@@ -1,0 +1,20 @@
+{
+  "dataHash": "17ae1e6d8bc18c1fb85d86fcaecb401d2772b092fe54314699d88b679d7dc1af",
+  "policies": {
+    "10ef34fa-dc01-47ba-9c61-3de57660e4fd:THREE_MUSKETEERS": {
+      "approved": false,
+      "heldOutFleets": 2,
+      "meanShotsSaved": 1.0749999999999993
+    },
+    "4375650f-0085-471c-b1fb-cef3e2750066:THREE_MUSKETEERS": {
+      "approved": false,
+      "heldOutFleets": 2,
+      "meanShotsSaved": -1.1250000000000036
+    },
+    "993a9f36-2711-49da-91c0-37e740851c61:THREE_MUSKETEERS": {
+      "approved": false,
+      "heldOutFleets": 4,
+      "meanShotsSaved": -3.6250000000000018
+    }
+  }
+}
