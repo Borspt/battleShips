@@ -233,6 +233,20 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
 
     share = lambda part, whole: round(part / whole, 3) if whole else None
 
+    def fleet_lift(games: list, last: int = 8) -> float | None:
+        """Насколько карта прошлых расстановок бота предсказывает его следующую: 1 — никак, меньше 1 — он уходит
+        с прежних мест. Для каждой из последних партий карта строится только по партиям до неё."""
+        placed = [game for game in games if game["placed"]]
+        scores = []
+        for number in range(max(10, len(placed) - last), len(placed)):
+            train = placed[max(0, number - RECENT):number]
+            seen = Counter(cell for game in train for cell in game["fleetCells"])
+            mean = sum(seen.values()) / 100
+            cells = placed[number]["fleetCells"]
+            if mean and cells:
+                scores.append(sum(seen.get(cell, 0) for cell in cells) / len(cells) / mean)
+        return round(sum(scores) / len(scores), 3) if len(scores) >= 5 else None
+
     def window(games: list) -> dict:
         """Привычки бота по последним партиям: соперники меняют игру в течение дня и под нас лично."""
         cells = Counter(cell for game in games for cell in game["shotCells"])
@@ -260,6 +274,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
     for key, profile in profiles.items():
         games = sorted(history.get(key, []), key=lambda game: game["at"])
         profile["recent"] = window(games[-RECENT:])
+        profile["recent"]["fleetLift"] = fleet_lift(games)
         profile["recentVsUs"] = window([game for game in games if game["vsUs"]][-RECENT_VS_US:])
         destroy = profile.pop("shotsToDestroy")
         profile["uniquePlacements"] = len(profile["uniquePlacements"])

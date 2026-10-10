@@ -82,7 +82,7 @@ class ChoosePlanTest(unittest.TestCase):
         from battleships.strategies.probability import ProbabilityStrategy
         corner = {f"{row},{column}": 0.9 for row in range(3) for column in range(3)}
         recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.4,
-                  "fleetCells": corner, "fleetSpread": 0.2}
+                  "fleetCells": corner, "fleetSpread": 0.2, "fleetLift": 1.6}
         plan = choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent))
         self.assertEqual(len(plan.cell_prior), 100)
         self.assertIsNone(plan.edge_bias)
@@ -90,7 +90,9 @@ class ChoosePlanTest(unittest.TestCase):
         rules = Rules.for_modifier("HUNGER_GAMES")
         row, column = ProbabilityStrategy(rules, random.Random(1), cell_prior=plan.cell_prior).next_shot()
         self.assertTrue(row < 3 and column < 3)
-        for other in (dict(recent, fleetSpread=0.08), dict(recent, placements=10)):  # случайная расстановка или мало партий
+        # случайная расстановка, мало партий или бот уходит с прежних мест
+        for other in (dict(recent, fleetSpread=0.08), dict(recent, placements=10), dict(recent, fleetLift=0.8),
+                      dict(recent, fleetLift=None)):
             self.assertIsNone(choose_plan("HUNGER_GAMES", REMOTE, profile(recent=other)).cell_prior)
         self.assertIsNone(choose_plan("DUEL", REMOTE, profile(recent=recent)).cell_prior)
 

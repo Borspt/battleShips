@@ -27,6 +27,9 @@ SINGLES_SHARE = 0.6
 # при разбросе от 0,095 это 8,1 попадания за 20 выстрелов вместо 6,5; у случайной расстановки — шум и минус.
 FLEET_SPREAD = 0.095
 MIN_FLEET_PLACEMENTS = 20
+# Карта годится, только если она предсказывала последние расстановки бота. Боты, которые видят наши выстрелы
+# в реплеях, уходят с прежних мест: против «Забудь весь контекст» карта давала 0–5 попаданий, 1 победа из 9.
+FLEET_LIFT = 1.15
 FLEET_SMOOTHING = 0.1
 
 
@@ -112,7 +115,8 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
                 early, origin = candidate["earlyCells"], label
                 break
         recent = (profile or {}).get("recent") or {}
-        if recent.get("placements", 0) >= MIN_FLEET_PLACEMENTS and (recent.get("fleetSpread") or 0.0) >= FLEET_SPREAD:
+        if (recent.get("placements", 0) >= MIN_FLEET_PLACEMENTS and (recent.get("fleetSpread") or 0.0) >= FLEET_SPREAD
+                and (recent.get("fleetLift") or 0.0) >= FLEET_LIFT):
             occupied = recent.get("fleetCells") or {}
             cell_prior = tuple((occupied.get(f"{row},{column}", 0.0) + FLEET_SMOOTHING) / (0.2 + FLEET_SMOOTHING)
                                for row in range(10) for column in range(10))
