@@ -26,6 +26,13 @@ def state_for(modifier=None) -> GameState:
     return GameState.from_message(message)
 
 
+def setUpModule():
+    # С 22:02 10.10 DISTANCE выключен по умолчанию; сама логика запросов проверяется при включённом.
+    patcher = mock.patch.object(ProbabilityBonusBot, "distance_enabled", True)
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class ProbabilityBotTest(unittest.TestCase):
     def test_placements_pass_shell_validation(self):
         bot = ProbabilityBot()
@@ -317,7 +324,8 @@ class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
             await worker.start()
             state = ProbabilityBotTest().endgame_state()
             action = await worker.call("choose_action", (state, 150), 0.15)
-            self.assertEqual((action.type, action.bonus), ("USE_BONUS", "DISTANCE"))
+            # рабочий процесс читает класс как есть: DISTANCE выключен, в концовке идёт обычный выстрел
+            self.assertEqual((action.type, action.bonus), ("SHOOT", None))
         finally:
             await worker.close()
 
