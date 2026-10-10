@@ -9,7 +9,7 @@ from battleships import model
 from battleships.placement import random_placement, edge_placement, interior_placement, validate_placement
 from battleships.rules import Rules
 from battleships.simulator import Board
-from battleships.strategies.haki import HakiEndgameStrategy, HakiObservationBot, choose_haki_plan
+from battleships.strategies.haki import HakiEndgameStrategy, LegacyHakiObservationBot, choose_haki_plan
 from battleships.strategies.adaptation import choose_plan
 from battleships.strategies.probability import EdgeBias, ProbabilityStrategy
 from battleships.worker import StrategyWorker
@@ -49,7 +49,7 @@ class HakiTest(unittest.TestCase):
         self.assertEqual(choose_haki_plan('DUEL', builtin, None), choose_plan('DUEL', builtin, None))
         state = model.GameState.from_message(started())
         state.opponent_info = model.OpponentInfo.from_wire({'kind': 'REMOTE_BOT', 'botId': 'test-opponent'})
-        bot = HakiObservationBot()
+        bot = LegacyHakiObservationBot()
         profile = {'vsBots': {'matches': 8, 'openingShots': 120, 'openingOnBorder': 0.1}}
         with mock.patch.object(bot.book, 'lookup', return_value=profile):
             self.assertIs(bot.plan(state).placement, random_placement)
@@ -104,7 +104,7 @@ class HakiTest(unittest.TestCase):
                 state = model.GameState.from_message(started())
                 state.rules = replace(state.rules, modifier=modifier)
                 state.ships = []  # placement already accepted; avoid opening-plan log here
-                bot = HakiObservationBot()
+                bot = LegacyHakiObservationBot()
                 bot.rng = random.Random(seed)
                 board = Board(random_placement(Rules(), random.Random(seed + 123)))
                 seen = set()
@@ -122,7 +122,7 @@ class HakiTest(unittest.TestCase):
 
 class HakiWorkerTest(unittest.IsolatedAsyncioTestCase):
     async def test_specific_entrypoint_fits_worker_budget(self):
-        worker = StrategyWorker('battleships.strategies.haki:HakiObservationBot')
+        worker = StrategyWorker('battleships.strategies.haki:LegacyHakiObservationBot')
         try:
             await worker.start()
             state = model.GameState.from_message(started())

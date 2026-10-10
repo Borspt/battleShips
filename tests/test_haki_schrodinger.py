@@ -8,7 +8,7 @@ from battleships import model
 from battleships.placement import random_placement
 from battleships.rules import Rules
 from battleships.simulator import Board
-from battleships.strategies.haki import HakiEndgameStrategy, HakiObservationBot
+from battleships.strategies.haki import HakiEndgameStrategy, LegacyHakiObservationBot
 
 
 def hidden_endgame():
@@ -29,7 +29,7 @@ class SchrodingerTest(unittest.TestCase):
 
     def test_distance_works_after_proved_sinks_without_any_sunk_message(self):
         state=hidden_endgame()
-        action=HakiObservationBot().choose_action(state,150)
+        action=LegacyHakiObservationBot().choose_action(state,150)
         self.assertEqual(action.bonus,'DISTANCE')
         self.assertTrue(model.valid_action(action,state,allow_bonuses=True))
 
@@ -112,7 +112,7 @@ class SchrodingerTest(unittest.TestCase):
         state=hidden_endgame()
         state.opponent={'bonuses':[{'bonus':'MINE','uses':3}]}
         with patch('battleships.strategies.haki.HakiEndgameStrategy', wraps=HakiEndgameStrategy) as cls:
-            HakiObservationBot().choose_action(state,150)
+            LegacyHakiObservationBot().choose_action(state,150)
             self.assertGreater(cls.call_args.kwargs['spread'],0)
 
     def test_complete_games_without_sunk_do_not_exclude_live_cells(self):
@@ -141,7 +141,7 @@ class SchrodingerTest(unittest.TestCase):
 class SchrodingerWorkerTest(unittest.IsolatedAsyncioTestCase):
     async def test_hidden_sinks_within_deadline(self):
         from battleships.worker import StrategyWorker
-        worker=StrategyWorker('battleships.strategies.haki:HakiObservationBot')
+        worker=StrategyWorker('battleships.strategies.haki:LegacyHakiObservationBot')
         try:
             await worker.start()
             action=await worker.call('choose_action',(hidden_endgame(),150),.15)
