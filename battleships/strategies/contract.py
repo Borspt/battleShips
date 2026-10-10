@@ -66,7 +66,7 @@ class ProbabilityBot:
         if state.ships is None and not state.shots:  # «Спидран»: расстановки нет, партия начинается с выстрела
             self._record(state, plan, placed=False)
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
-                                      spread=self._spread(state))
+                                      spread=self._spread(state), sunk_checks=True)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
@@ -187,4 +187,6 @@ class ProbabilityBonusBot(ProbabilityBot):
             lost = len({cell for cell, result in state.opponent_shots if result in ("HIT", "SUNK")})
             if fleet and (fleet - lost) / fleet > self.safe_lead:
                 return 0
-        return max(0, min(state.bonuses.get("DISTANCE", 0), self.max_distance_queries - used))
+        # В «Шрёдингере» запрос отвечает, потоплен ли корабль, и стоит своей цены все три раза.
+        limit = 3 if state.rules.modifier == "SCHRODINGER_SHIP" else self.max_distance_queries
+        return max(0, min(state.bonuses.get("DISTANCE", 0), limit - used))

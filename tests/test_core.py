@@ -182,6 +182,43 @@ class ShootingTest(unittest.TestCase):
             finishing.add(shooter.next_shot())
         self.assertLessEqual(finishing, {(4, 5), (6, 5), (5, 4), (5, 6)})
 
+    def test_schrodinger_distance_on_hit_cell_tells_whether_ship_is_sunk(self):
+        rules = Rules(rows=8, columns=8, fleet=(3, 2, 2, 2, 2), modifier="SCHRODINGER_SHIP")
+        shooter = ProbabilityStrategy(rules, random.Random(1), distance_uses=2, sunk_checks=True)
+        shooter.on_shot_result((2, 2), "HIT")
+        shooter.on_shot_result((2, 3), "HIT")     # двухпалубный целиком или часть трёхпалубного?
+        self.assertEqual(shooter.next_action(), ("DISTANCE", (2, 2)))
+        shooter.on_distance((2, 2), 3)            # ближайший живой корабль в трёх клетках: этот потоплен
+        self.assertEqual((shooter.hits, sorted(shooter.remaining)), (0, [2, 2, 2, 3]))
+        self.assertNotIn(shooter.next_shot(), {(2, 1), (2, 4), (1, 2), (3, 3)})   # клетки вокруг закрыты
+        alive = ProbabilityStrategy(rules, random.Random(1), distance_uses=2, sunk_checks=True)
+        alive.on_shot_result((2, 2), "HIT")
+        alive.on_shot_result((2, 3), "HIT")
+        alive.on_distance((2, 2), 0)              # корабль жив — значит, это трёхпалубный
+        self.assertEqual(alive.next_action()[0], "SHOOT")
+        self.assertIn(alive.next_shot(), {(2, 1), (2, 4)})
+
+    def test_schrodinger_sunk_checks_are_opt_in_and_save_shots(self):
+        rules = Rules.for_modifier("SCHRODINGER_SHIP")
+        plain = ProbabilityStrategy(rules, random.Random(1), distance_uses=3)
+        plain.on_shot_result((2, 2), "HIT")
+        plain.on_shot_result((2, 3), "HIT")
+        plain.on_shot_result((2, 4), "HIT")
+        self.assertEqual(plain.next_action()[0], "SHOOT")
+        mean = {}
+        for uses in (0, 3):
+            rng = random.Random(44)
+            games = [play_solo(rules, ProbabilityStrategy(rules, random.Random(rng.random()), distance_uses=uses, sunk_checks=True),
+                               random_placement(rules, rng)) for _ in range(120)]
+            self.assertTrue(all(g.destroyed for g in games))
+            mean[uses] = sum(g.shots for g in games) / len(games)
+        self.assertLess(mean[3], mean[0] - 3)
+
+    def test_distance_zero_on_fresh_cell_marks_a_ship_there(self):
+        shooter = ProbabilityStrategy(Rules(), random.Random(1))
+        shooter.on_distance((4, 4), 0)
+        self.assertEqual(shooter.next_shot(), (4, 4))
+
     def test_defended_cell_is_shot_again(self):
         shooter = ProbabilityStrategy(Rules(), random.Random(1))
         shooter.on_shot_result((4, 4), "DEFENDED")

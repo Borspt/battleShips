@@ -20,6 +20,9 @@ ENDGAME_SHIPS = 3
 ENDGAME_NODES = 40_000  # предел перебора; сверх него играем по обычной карте
 QUERY_SAMPLE = 300  # по скольким расстановкам оцениваем, какой запрос DISTANCE информативнее
 MIN_QUERY_BITS = 0.5  # запрос, ответ на который несёт меньше информации, не стоит своей цены
+# «Шрёдингер»: проверяем потопление, если это экономит в среднем больше стольких выстрелов. В симуляторе
+# три запроса с порогом 1,2 экономят 6,5 выстрела (2,2 на запрос), с порогом 0,8 — 3,9, с 0,5 — 2,5.
+SUNK_CHECK_MIN = 1.2
 
 
 @dataclass(frozen=True)
@@ -38,13 +41,16 @@ HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
 
 class ProbabilityStrategy(Strategy):
     def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0,
-                 spread: float = 0.0, **kwargs):
+                 spread: float = 0.0, sunk_checks: bool = False, **kwargs):
         super().__init__(rules, rng, **kwargs)
+        # «Шрёдингер»: тратить ли DISTANCE на вопрос «потоплен ли корабль» по подбитой клетке.
+        self.sunk_checks = sunk_checks
         # Против чужих мин: в поиске бьём не строго в лучшую клетку, а в случайную из почти лучших
         # (вес не меньше 1 - spread от максимума), чтобы следующий выстрел нельзя было предсказать.
         self.spread = spread
         self.distance_uses = distance_uses  # сколько запросов DISTANCE можно потратить
         self.distances: list[tuple[int, int]] = []  # ответы DISTANCE: (индекс клетки, расстояние)
+        self.confirmed_alive = 0  # «Шрёдингер»: группы попаданий, про которые DISTANCE ответил «корабль жив»
         self.edge_bias = edge_bias
         self.size = rules.rows * rules.columns
         self.side, self.diagonal = neighbour_masks(rules.rows, rules.columns)
@@ -69,12 +75,17 @@ class ProbabilityStrategy(Strategy):
         return to_cell(self.rng.choice(choices), self.rules.columns)
 
     def next_action(self) -> tuple[str, Cell]:
-        """("SHOOT", клетка) или ("DISTANCE", клетка запроса). Запрос — только в концовке без недобитых."""
-        if self.distance_uses > 0 and not self.hits and not self.known_ship and self.rules.announces_sunk:
-            configs = self._endgame_configs()
-            if configs and len(configs) > 1:
-                index, information = self._best_query(configs)
-                if information >= MIN_QUERY_BITS:
+        """("SHOOT", клетка) или ("DISTANCE", клетка запроса)."""
+        if self.distance_uses > 0 and not self.known_ship:
+            if not self.hits:  # концовка без недобитых: запрос туда, где ответ сильнее всего сужает перебор
+                configs = self._endgame_configs()
+                if configs and len(configs) > 1:
+                    index, information = self._best_query(configs)
+                    if information >= MIN_QUERY_BITS:
+                        return "DISTANCE", to_cell(index, self.rules.columns)
+            elif self.sunk_checks and not self.rules.announces_sunk:
+                index = self._sunk_check_cell()
+                if index is not None:
                     return "DISTANCE", to_cell(index, self.rules.columns)
         return "SHOOT", self.next_shot()
 
@@ -82,8 +93,66 @@ class ProbabilityStrategy(Strategy):
         """Ответ DISTANCE: расстояние от клетки до ближайшей клетки непотопленного корабля."""
         row, column = cell
         self.distance_uses = max(0, self.distance_uses - 1)
-        if 0 <= row < self.rules.rows and 0 <= column < self.rules.columns and distance is not None:
-            self.distances.append((row * self.rules.columns + column, int(distance)))
+        if not (0 <= row < self.rules.rows and 0 <= column < self.rules.columns) or distance is None:
+            return
+        distance, query = int(distance), row * self.rules.columns + column
+        self.distances.append((query, distance))
+        if distance == 0:
+            if not (self.hits | self.sunk) >> query & 1:
+                self.known_ship |= 1 << query  # в самой клетке целый корабль
+            else:
+                self.confirmed_alive |= self._group(query)
+            return
+        # Ближе distance живых кораблей нет: попадания там принадлежат уже потопленным, остальное пусто.
+        for index in range(self.size):
+            r, c = divmod(index, self.rules.columns)
+            if abs(r - row) + abs(c - column) >= distance or self.sunk >> index & 1:
+                continue
+            if self.hits >> index & 1:
+                self._sink(self._group(index))
+            else:
+                self.empty |= 1 << index
+        if not self.rules.announces_sunk:
+            self._infer_sunk()
+
+    def _sunk_check_cell(self) -> int | None:
+        """«Корабль Шрёдингера»: подбитая клетка, по которой стоит спросить, потоплен ли корабль.
+
+        Берём группу попаданий, у которой больше всего ожидаемых лишних выстрелов: вероятность,
+        что она уже целый корабль, умноженная на число клеток, куда мы иначе стали бы её продолжать.
+        """
+        rows, columns = self.rules.rows, self.rules.columns
+        blocked, best, best_index = self.empty | self.sunk, SUNK_CHECK_MIN, None
+        pending = self.hits & ~self.confirmed_alive
+        while pending:
+            group = self._group(next(bits(pending)))
+            pending &= ~group
+            size = group.bit_count()
+            if size not in self.remaining:
+                continue
+            growth = 0
+            for index in bits(group):
+                growth |= self.side[index]
+            growth &= ~(group | blocked)
+            if size > 1:  # корабль прямой: расти может только вдоль своей оси
+                cells = list(bits(group))
+                along_row = cells[1] - cells[0] == 1
+                growth = sum(1 << i for i in bits(growth)
+                             if (i // columns == cells[0] // columns) == along_row and (along_row or i % columns == cells[0] % columns))
+            complete = float(self.remaining.count(size))
+            longer = 0.0
+            for length in set(self.remaining):
+                if length <= size:
+                    continue
+                for mask, around, _ in placements(rows, columns, length):
+                    if mask & group == group and not mask & blocked and not around & self.hits & ~mask:
+                        longer += self.remaining.count(length)
+            if complete + longer == 0:
+                continue
+            saved = complete / (complete + longer) * growth.bit_count()
+            if saved > best:
+                best, best_index = saved, next(bits(group))
+        return best_index
 
     def on_shot_result(self, cell: Cell, result: str) -> None:
         row, column = cell
