@@ -1,0 +1,138 @@
+{
+  "date": "2026-10-10",
+  "scope": "Только Хаки Наблюдения. Исследование без запуска и изменения боевой стратегии.",
+  "baseCommit": "8c77e1a",
+  "decision": "Оба кандидата бонусной стратегии отклонены. Случайная расстановка сохранена. Новое преимущество в рейтинге не доказано.",
+  "latestLiveSeries": {
+    "source": "logs/muzrob/session-20261010T131557-f32da164.jsonl",
+    "launchedBy": "Соседний чат по отдельной команде пользователя",
+    "wins": 3,
+    "losses": [
+      {
+        "shots": 44,
+        "hits": 14,
+        "opponentShots": 51,
+        "inferredRemaining": [
+          2,
+          2,
+          1,
+          1,
+          1
+        ],
+        "unresolvedHits": 1
+      },
+      {
+        "shots": 54,
+        "hits": 15,
+        "opponentShots": 59,
+        "inferredRemaining": [
+          2,
+          1,
+          1,
+          1
+        ],
+        "unresolvedHits": 0
+      }
+    ],
+    "ownDistanceInWins": [
+      2,
+      2,
+      2
+    ],
+    "ownDistanceInLosses": [
+      0,
+      0
+    ],
+    "causality": "Бонусы использованы в победах, но это не доказывает причинность: успешный поиск сам открывает доступ к бонусу.",
+    "timeout": {
+      "moveNumber": 53,
+      "requestReceived": "2026-10-10T13:16:18.514650Z",
+      "shotSent": "2026-10-10T13:16:18.531740Z",
+      "timeoutReceived": "2026-10-10T13:16:18.799403Z",
+      "localResponseMs": 17.09,
+      "conclusion": "Таймаут подтверждён; медленный локальный расчёт не подтверждён. Разделить задержку сервера и сети этим журналом нельзя."
+    }
+  },
+  "earlySunkCheck": {
+    "development": {
+      "fleets": 32,
+      "baselineShots": 56.71875,
+      "earlyShots": 59.34375,
+      "meanShotsSaved": -2.624999999999999,
+      "lowerApprox95": -4.047662832174291,
+      "baselineQueries": 2,
+      "earlyQueries": 2
+    },
+    "validation": {
+      "fleets": 10,
+      "baselineShots": 60.5,
+      "earlyShots": 60.166666666666664,
+      "meanShotsSaved": 0.33333333333333426,
+      "lowerApprox95": -1.422081569611687,
+      "baselineQueries": 2,
+      "earlyQueries": 2
+    }
+  },
+  "fourMixedShips": {
+    "development": {
+      "fleets": 32,
+      "baselineShots": 56.885416666666664,
+      "candidateShots": 57.145833333333336,
+      "meanShotsSaved": -0.2604166666666661,
+      "lowerApprox95": -1.2270343772364114,
+      "candidateMaxMs": 194.1686999925878
+    },
+    "validation": {
+      "fleets": 10,
+      "baselineShots": 59.46666666666667,
+      "candidateShots": 59.733333333333334,
+      "meanShotsSaved": -0.266666666666665,
+      "lowerApprox95": -1.569275634644695,
+      "candidateMaxMs": 310.4438000009395
+    }
+  },
+  "defence": {
+    "random_placement": {
+      "unbiased": {
+        "meanShotsToDestroyUs": 56.9,
+        "p10": 47
+      },
+      "edge_aware": {
+        "meanShotsToDestroyUs": 60.8,
+        "p10": 53
+      }
+    },
+    "edge_placement": {
+      "unbiased": {
+        "meanShotsToDestroyUs": 66.46666666666667,
+        "p10": 58
+      },
+      "edge_aware": {
+        "meanShotsToDestroyUs": 54.03333333333333,
+        "p10": 44
+      }
+    },
+    "interior_placement": {
+      "unbiased": {
+        "meanShotsToDestroyUs": 52.2,
+        "p10": 45
+      },
+      "edge_aware": {
+        "meanShotsToDestroyUs": 64.53333333333333,
+        "p10": 60
+      }
+    }
+  },
+  "limitations": [
+    "Исторические расстановки до Шрёдингера; против них моделируются правила Шрёдингера.",
+    "Соло-поиск измеряет число выстрелов, а не шанс победы или Elo. Нет противника, мин, щитов, сетевых задержек и порога собственных повреждений.",
+    "32 флота основной выборки, 10 более поздних Donatello; каждый по 3 seed. Более поздняя выборка уже использовалась в другом исследовании: это не новая слепая проверка.",
+    "Защита: по 30 новых случайных расстановок каждого типа против двух синтетических стрелков, не копий участников.",
+    "В обоих вариантах снят временной предел перебора, сохранены ограничения узлов. Максимальные задержки не являются оценкой задержки рабочего процесса."
+  ],
+  "reproduce": [
+    "python scripts/audit_haki_ranked.py",
+    "python -m scripts.audit_haki_four_ships"
+  ],
+  "nextDecision": "Нужна проверка на свежих рейтинговых реплеях текущего режима. Не объявлять стратегию улучшенной и не запускать автоматически по результатам этой работы."
+}
