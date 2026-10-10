@@ -50,6 +50,14 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertGreater(weight(0.7), 3.0)     # однопалубные у края
         self.assertEqual(weight(0.99), 4.0)      # вес ограничен
 
+    def test_singles_on_border_are_used_even_when_long_ships_are_placed_anywhere(self):
+        plan = choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.36, singlesOnBorderShare=0.7)))
+        self.assertEqual((plan.edge_bias.edge, plan.edge_bias.corner), (1.0, 1.0))
+        self.assertGreater(plan.edge_bias.single_edge, 3.0)
+        self.assertIn("однопалубных у края", plan.reason)
+        for share in (0.47, 0.55):  # случайная расстановка и рядом с ней — без поправки
+            self.assertIsNone(choose_plan(None, REMOTE, profile(vsBots=versus_bots(singlesOnBorderShare=share))).edge_bias)
+
     def test_recent_games_override_whole_day_and_games_with_us_override_both(self):
         day = versus_bots(longShipsOnBorder=0.31)
         recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.5}

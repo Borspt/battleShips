@@ -19,6 +19,9 @@ MIN_PLACEMENTS = 8  # меньше расстановок в профиле — 
 MIN_RECENT_VS_US = 5  # партий с нами хватает меньше: это ровно та игра, которую нам предстоит встретить
 MEDIUM_SHARE = 0.45  # при случайной расстановке у края около трети клеток длинных кораблей
 MIN_MATCHES = 5
+# При случайной расстановке у края 47% однопалубных. На 164 расстановках «Низких ожиданий» (73% у края)
+# поправка экономит 2,3 выстрела, против случайной расстановки она же стоит 2,5 — поэтому порог высокий.
+SINGLES_SHARE = 0.6
 
 
 @dataclass(frozen=True)
@@ -56,12 +59,19 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None) -> Plan:
             bias = HARD_BIAS
         elif share >= MEDIUM_SHARE:
             bias = MEDIUM_BIAS
+        # Однопалубные: во сколько раз крайняя клетка занята чаще внутренней. На краю 36% клеток поля.
+        singles = habits.get("singlesOnBorderShare")
+        single_edge = None
+        if singles is not None and 0 < singles < 1:
+            single_edge = round(min(4.0, max(0.5, (singles / 0.36) / ((1 - singles) / 0.64))), 2)
         if bias:
-            # Однопалубные: во сколько раз крайняя клетка занята чаще внутренней. На краю 36% клеток поля.
-            singles = habits.get("singlesOnBorderShare")
-            if singles is not None and 0 < singles < 1:
-                bias = replace(bias, single_edge=round(min(4.0, max(0.5, (singles / 0.36) / ((1 - singles) / 0.64))), 2))
+            if single_edge is not None:
+                bias = replace(bias, single_edge=single_edge)
             reasons.append(f"{source} ставит {share:.0%} длинных кораблей у края")
+        elif single_edge is not None and singles >= SINGLES_SHARE:
+            # Длинные корабли стоят как попало, а однопалубные прижаты к краю — так играют «Низкие ожидания».
+            bias = EdgeBias(single_edge=single_edge)
+            reasons.append(f"{source} ставит {singles:.0%} однопалубных у края")
     elif getattr(opponent, "built_in_bot", None) == "HARD":
         bias = HARD_BIAS
         reasons.append("встроенный HARD ставит флот у краёв")
