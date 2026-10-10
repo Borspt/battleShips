@@ -32,6 +32,7 @@ def main():
     parser.add_argument("--opponent", choices=["EASY", "MEDIUM", "HARD"], default="EASY")
     parser.add_argument("--strategy", default="battleships.strategy:BaselineStrategy")
     parser.add_argument("--log-dir", default="logs")
+    parser.add_argument("--opponent-ratings-file", help="Optional fresh Elo observations for built-in bots (JSON)")
     parser.add_argument("--budget-ms", type=int, default=150)
     parser.add_argument("--reserve-ms", type=int, default=250)
     parser.add_argument("--allow-bonuses", action="store_true", help="Allow strategy to spend rating on bonuses")
@@ -52,7 +53,7 @@ def main():
         asyncio.run(run_bot(url=url, token=token, strategy=args.strategy, mode=args.mode,
                             opponent=args.opponent, log_dir=args.log_dir, budget_ms=args.budget_ms,
                             reserve_ms=args.reserve_ms, allow_bonuses=args.allow_bonuses,
-                            stop_after=args.stop_after))
+                            stop_after=args.stop_after, opponent_ratings_file=args.opponent_ratings_file))
     except KeyboardInterrupt:
         pass
     except Exception as exc:

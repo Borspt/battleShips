@@ -4,6 +4,7 @@ import logging
 import random
 import time
 from datetime import datetime, timezone
+from dataclasses import asdict
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from .model import Action, Cell, GameState, valid_action, valid_placement
 from .strategy import BaselineStrategy
 from .worker import StrategyWorker
+from .opponents import OpponentDirectory
 
 LOG = logging.getLogger(__name__)
 STOP_CODES = {4001, 4002, 4004, 4005}
@@ -47,7 +49,7 @@ class Journal:
 
 class Controller:
     def __init__(self, send, worker, journal, *, budget_ms=150, reserve_ms=250,
-                 allow_bonuses=False):
+                 allow_bonuses=False, opponent_directory=None):
         self.send = send
         self.worker = worker
         self.journal = journal
@@ -63,6 +65,25 @@ class Controller:
         self.turn_key = None
         self.retries = 0
         self.placement_attempts = 0
+        self.opponent_directory = opponent_directory
+        self.opponent_task = None
+        self.match_key = None
+
+    async def close(self):
+        if self.opponent_task is not None:
+            self.opponent_task.cancel()
+            await asyncio.gather(self.opponent_task, return_exceptions=True)
+            self.opponent_task = None
+
+    async def load_opponent(self, state, match_key):
+        try:
+            info = await self.opponent_directory.lookup(state.opponent_info)
+            if self.state is state and not state.finished:
+                state.opponent_info = info
+                self.journal.write("opponent_context", {"match_key": match_key, **asdict(info)})
+        except Exception as exc:
+            self.journal.write("opponent_lookup_failed", {"match_key": match_key,
+                                                         "reason": type(exc).__name__})
 
     async def emit(self, message: dict, deadline: float | None = None):
         payload = json.dumps(message, separators=(",", ":"))
@@ -86,7 +107,7 @@ class Controller:
         if not fallback_only:
             try:
                 budget = min(1.0, self.placement_deadline - time.monotonic())
-                ships = await self.worker.call("place_ships", (self.state.rules,), budget)
+                ships = await self.worker.call("place_ships_for_match", (self.state,), budget)
             except Exception as exc:
                 self.journal.write("placement_fallback", {"reason": type(exc).__name__})
         if not valid_placement(ships, self.state.rules):
@@ -132,7 +153,14 @@ class Controller:
         self.journal.write("received", msg)
         kind = msg.get("type")
         if kind in {"MATCH_STARTED", "MATCH_SNAPSHOT"}:
+            received_at = time.monotonic()
+            await self.close()
             self.state = GameState.from_message(msg)
+            # The protocol has no matchId; this key only correlates local log records.
+            self.match_key = uuid4().hex
+            self.journal.write("match_context", {"match_key": self.match_key,
+                                                "restored": kind == "MATCH_SNAPSHOT",
+                                                **asdict(self.state.opponent_info)})
             self.pending = self.pending_ships = self.turn_key = None
             self.turn_deadline = 0.0
             self.placement_attempts = 0
@@ -143,7 +171,17 @@ class Controller:
             if window is not None:
                 # Rounded-down zero still means an open sub-second placement window.
                 usable = float(window) if window > 0 else 0.1
-                self.placement_deadline = time.monotonic() + max(0.01, usable - self.reserve_ms / 1000)
+                self.placement_deadline = received_at + max(0.01, usable - self.reserve_ms / 1000)
+            if self.opponent_directory and self.state.opponent_info.key:
+                self.opponent_task = asyncio.create_task(self.load_opponent(self.state, self.match_key))
+                # No HTTP in choose_action. Bound the initial wait; slow lookup continues
+                # in the background and updates this match only, without delaying turns.
+                wait = 0.1 if kind == "MATCH_SNAPSHOT" or self.state.rules.modifier == "SPEEDRUN" else 4.0
+                if window is not None:
+                    wait = min(wait, max(0, self.placement_deadline - time.monotonic() - 1.2))
+                if wait > 0:
+                    await asyncio.wait({self.opponent_task}, timeout=wait)
+            if window is not None:
                 await self.place()
             return
         if kind == "BET_REQUESTED":
@@ -211,6 +249,13 @@ class Controller:
             self.turn_deadline = 0.0
         elif kind == "MATCH_FINISHED":
             self.state.finished = True
+            self.journal.write("match_summary", {"match_key": self.match_key,
+                "opponent": asdict(self.state.opponent_info),
+                "outcome": msg.get("outcome"), "end_reason": msg.get("endReason"),
+                "modifier": self.state.rules.modifier,
+                "shots": [{"cell": c.wire(), "result": r} for c, r in self.state.shots],
+                "opponent_shots": [{"cell": c.wire(), "result": r} for c, r in self.state.opponent_shots]})
+            await self.close()
             self.pending = None
             self.turn_deadline = 0.0
             LOG.info("Match finished: %s (%s)", msg.get("outcome"), msg.get("endReason"))
@@ -219,17 +264,21 @@ class Controller:
 
 async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: str,
                   log_dir: str, budget_ms: int, reserve_ms: int, allow_bonuses: bool,
-                  stop_after: int = 0):
+                  stop_after: int = 0, opponent_ratings_file: str | None = None):
     worker = StrategyWorker(strategy)
     journal = Journal(log_dir, token)
     completed = 0
     delay = 0.5
+    controller = None
+    directory = OpponentDirectory(url, opponent_ratings_file)
     try:
         try:
             await worker.start()
         except Exception as exc:
             journal.write("strategy_start_failed", {"reason": type(exc).__name__})
         while True:
+            if controller is not None:
+                await controller.close()
             opened_at = time.monotonic()
             try:
                 async with connect(url, additional_headers={"Authorization": f"Bearer {token}"},
@@ -238,7 +287,8 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                     journal.write("connected")
                     LOG.info("Connected; requested mode: %s", mode)
                     controller = Controller(ws.send, worker, journal, budget_ms=budget_ms,
-                                            reserve_ms=reserve_ms, allow_bonuses=allow_bonuses)
+                                            reserve_ms=reserve_ms, allow_bonuses=allow_bonuses,
+                                            opponent_directory=directory)
                     await controller.emit({"type": "CHANGE_MODE", "mode": mode,
                                            **({"opponent": opponent} if mode == "TRAINING" else {})})
                     async for raw in ws:
@@ -283,5 +333,7 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
             await asyncio.sleep(delay + random.uniform(0, delay * 0.2))
             delay = min(10, delay * 2)
     finally:
+        if controller is not None:
+            await controller.close()
         await worker.close()
         journal.close()
