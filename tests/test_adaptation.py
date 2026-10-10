@@ -152,6 +152,11 @@ class ChoosePlanTest(unittest.TestCase):
         strong = choose_plan(None, OpponentInfo(key="bot:b", bot_id="b", rating=1600.0), None)
         self.assertEqual((strong.placement, strong.edge_bias), (random_placement, None))
         self.assertEqual(choose_plan("SPEEDRUN", REMOTE, None).edge_bias, HARD_BIAS)
+        singles = choose_plan("SPEEDRUN", REMOTE, None).single_prior
+        self.assertEqual(len(singles), 100)
+        self.assertLess(singles[0], singles[11])            # на краю HARD однопалубные не ставит
+        self.assertGreater(singles[23], 2 * singles[44])    # (2,3) втрое чаще центра
+        self.assertIsNone(choose_plan(None, REMOTE, None).single_prior)
         self.assertEqual(choose_plan("SPEEDRUN", REMOTE, profile()).edge_bias, HARD_BIAS)
 
 
