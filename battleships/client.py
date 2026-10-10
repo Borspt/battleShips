@@ -1,0 +1,287 @@
+import asyncio
+import json
+import logging
+import random
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed, InvalidStatus
+
+from .model import Action, Cell, GameState, valid_action, valid_placement
+from .strategy import BaselineStrategy
+from .worker import StrategyWorker
+
+LOG = logging.getLogger(__name__)
+STOP_CODES = {4001, 4002, 4004, 4005}
+
+
+class Journal:
+    def __init__(self, directory: str, token: str):
+        path = Path(directory)
+        path.mkdir(parents=True, exist_ok=True)
+        self.path = path / f"session-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid4().hex[:8]}.jsonl"
+        self.file = self.path.open("a", encoding="utf-8")
+        self.token = token
+
+    def write(self, event: str, data=None):
+        def redact(value):
+            if isinstance(value, dict):
+                return {k: ("[REDACTED]" if any(word in k.lower()
+                        for word in ("token", "authorization", "password", "secret"))
+                        else redact(v)) for k, v in value.items()}
+            if isinstance(value, list):
+                return [redact(v) for v in value]
+            if isinstance(value, str) and self.token:
+                return value.replace(self.token, "[REDACTED]")
+            return value
+        self.file.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(),
+                                   "event": event, "data": redact(data)}, ensure_ascii=False) + "\n")
+        self.file.flush()
+
+    def close(self):
+        self.file.close()
+
+
+class Controller:
+    def __init__(self, send, worker, journal, *, budget_ms=150, reserve_ms=250,
+                 allow_bonuses=False):
+        self.send = send
+        self.worker = worker
+        self.journal = journal
+        self.budget_ms = budget_ms
+        self.reserve_ms = reserve_ms
+        self.allow_bonuses = allow_bonuses
+        self.fallback = BaselineStrategy()
+        self.state = None
+        self.pending = None
+        self.pending_ships = None
+        self.turn_deadline = 0.0
+        self.placement_deadline = 0.0
+        self.turn_key = None
+        self.retries = 0
+        self.placement_attempts = 0
+
+    async def emit(self, message: dict, deadline: float | None = None):
+        payload = json.dumps(message, separators=(",", ":"))
+        if len(payload.encode("utf-8")) > 8192:
+            raise ValueError("Outgoing message exceeds 8 KiB")
+        remaining = deadline - time.monotonic() if deadline is not None else 2.0
+        if remaining <= 0:
+            self.journal.write("expired_action", {"type": message["type"]})
+            return False
+        await asyncio.wait_for(self.send(payload), timeout=remaining)
+        self.journal.write("sent", message)
+        return True
+
+    async def place(self, *, fallback_only=False):
+        if self.state.rules.modifier == "SPEEDRUN" or self.state.ships is not None:
+            return
+        self.placement_attempts += 1
+        if self.placement_attempts > 2 or time.monotonic() >= self.placement_deadline:
+            return
+        ships = None
+        if not fallback_only:
+            try:
+                budget = min(1.0, self.placement_deadline - time.monotonic())
+                ships = await self.worker.call("place_ships", (self.state.rules,), budget)
+            except Exception as exc:
+                self.journal.write("placement_fallback", {"reason": type(exc).__name__})
+        if not valid_placement(ships, self.state.rules):
+            # Runs outside the event loop, bounded inside the reference generator.
+            try:
+                ships = await asyncio.to_thread(self.fallback.place_ships, self.state.rules)
+            except Exception as exc:
+                self.journal.write("placement_failed", {"reason": type(exc).__name__})
+                return
+        if valid_placement(ships, self.state.rules):
+            self.pending_ships = ships
+            await self.emit({"type": "PLACE", "ships": [
+                {"cells": [c.wire() for c in ship]} for ship in ships
+            ]}, self.placement_deadline)
+
+    async def act(self, *, fallback_only=False):
+        if self.state is None or self.state.finished or self.state.shots_left <= 0:
+            return
+        remaining = self.turn_deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        action = None
+        if not fallback_only:
+            budget = min(self.budget_ms / 1000, max(0, remaining - 0.15))
+            if budget > 0.01:
+                try:
+                    action = await self.worker.call(
+                        "choose_action", (self.state, int(budget * 1000)), budget)
+                except Exception as exc:
+                    self.journal.write("strategy_fallback", {"reason": type(exc).__name__})
+        if not valid_action(action, self.state, allow_bonuses=self.allow_bonuses):
+            if action is not None:
+                self.journal.write("invalid_strategy_action")
+            try:
+                action = self.fallback.choose_action(self.state, 0)
+            except ValueError:
+                self.journal.write("no_legal_target")
+                return
+        if await self.emit(action.wire(), self.turn_deadline):
+            self.pending = action
+
+    async def handle(self, msg: dict):
+        self.journal.write("received", msg)
+        kind = msg.get("type")
+        if kind in {"MATCH_STARTED", "MATCH_SNAPSHOT"}:
+            self.state = GameState.from_message(msg)
+            self.pending = self.pending_ships = self.turn_key = None
+            self.turn_deadline = 0.0
+            self.placement_attempts = 0
+            # Snapshot has no current-turn deadline: never invent a turn on recovery.
+            window = (self.state.rules.placement_window_seconds if kind == "MATCH_STARTED"
+                      else msg.get("placementWindowLeftSeconds"))
+            LOG.info("%s: %s", kind, self.state.rules.modifier or "CLASSIC")
+            if window is not None:
+                # Rounded-down zero still means an open sub-second placement window.
+                usable = float(window) if window > 0 else 0.1
+                self.placement_deadline = time.monotonic() + max(0.01, usable - self.reserve_ms / 1000)
+                await self.place()
+            return
+        if kind == "BET_REQUESTED":
+            self.journal.write("bet_skipped", {"reason": "rating spending disabled"})
+            return
+        if self.state is None:
+            return
+        if kind == "PLACEMENT_ACCEPTED":
+            self.state.ships = self.pending_ships
+            self.pending_ships = None
+        elif kind == "PLACEMENT_REJECTED":
+            if msg.get("reason") not in {"PLACEMENT_ALREADY_ACCEPTED", "NO_PLACEMENT_IN_MATCH", "MATCH_FINISHED"}:
+                await self.place(fallback_only=True)
+        elif kind == "TURN_REQUESTED":
+            if self.state.finished:
+                return
+            key = (msg["moveNumber"], msg["shotsLeft"], msg["shotsLeftInTurn"])
+            if key == self.turn_key:
+                self.journal.write("duplicate_turn_ignored")
+                return
+            self.turn_key = key
+            self.state.move_number, self.state.shots_left, self.state.shots_left_in_turn = key
+            self.turn_deadline = time.monotonic() + max(
+                0, self.state.rules.move_timeout_seconds - self.reserve_ms / 1000)
+            self.pending = None
+            self.retries = 0
+            await self.act()
+        elif kind == "SHOT_RESOLVED":
+            self.state.shots.append((Cell.parse(msg["cell"]), msg["result"]))
+            self.pending = None
+            # Always wait for TURN_REQUESTED, including after a HIT.
+        elif kind == "OPPONENT_SHOT":
+            cell, result = Cell.parse(msg["cell"]), msg["result"]
+            self.state.opponent_shots.append((cell, result))
+            if result == "DEFENDED":
+                self.state.shield_active = False
+            if result == "MINE":
+                self.state.mines.discard(cell)
+        elif kind == "BONUS_RESOLVED":
+            bonus = msg["bonus"]
+            self.state.bonuses[bonus] = max(0, self.state.bonuses.get(bonus, 0) - 1)
+            result = dict(msg)
+            if self.pending and self.pending.cell:
+                result["requestedCell"] = self.pending.cell.wire()
+            self.state.bonus_results.append(result)
+            if bonus == "SHIELD":
+                self.state.shield_active = bool(msg.get("shieldActive"))
+            if bonus == "MINE" and msg.get("mineCell"):
+                self.state.mines.add(Cell.parse(msg["mineCell"]))
+            self.pending = None
+            # SALVO can leave all three counters unchanged (e.g. a multi-shot mode).
+            # A successful action still permits a new request for the same turn.
+            self.turn_key = None
+        elif kind == "OPPONENT_BONUS_USED":
+            self.state.opponent_bonuses.append(msg["bonus"])
+        elif kind in {"BONUS_REJECTED", "COMMAND_REJECTED"}:
+            reason = msg.get("reason")
+            recoverable = reason not in {"NOT_YOUR_TURN", "NO_RUNNING_MATCH", "MATCH_FINISHED"}
+            if recoverable and self.pending is not None and self.retries < 1:
+                self.retries += 1
+                self.pending = None
+                await self.act(fallback_only=True)
+        elif kind in {"TURN_TIMED_OUT", "SHOT_REJECTED"}:
+            self.pending = None
+            self.turn_deadline = 0.0
+        elif kind == "MATCH_FINISHED":
+            self.state.finished = True
+            self.pending = None
+            self.turn_deadline = 0.0
+            LOG.info("Match finished: %s (%s)", msg.get("outcome"), msg.get("endReason"))
+        # Unknown types and extra fields do not terminate the connection.
+
+
+async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: str,
+                  log_dir: str, budget_ms: int, reserve_ms: int, allow_bonuses: bool,
+                  stop_after: int = 0):
+    worker = StrategyWorker(strategy)
+    journal = Journal(log_dir, token)
+    completed = 0
+    delay = 0.5
+    try:
+        try:
+            await worker.start()
+        except Exception as exc:
+            journal.write("strategy_start_failed", {"reason": type(exc).__name__})
+        while True:
+            opened_at = time.monotonic()
+            try:
+                async with connect(url, additional_headers={"Authorization": f"Bearer {token}"},
+                                   open_timeout=10, ping_interval=20, ping_timeout=20,
+                                   close_timeout=2, max_size=4 * 1024 * 1024, proxy=None) as ws:
+                    journal.write("connected")
+                    LOG.info("Connected; requested mode: %s", mode)
+                    controller = Controller(ws.send, worker, journal, budget_ms=budget_ms,
+                                            reserve_ms=reserve_ms, allow_bonuses=allow_bonuses)
+                    await controller.emit({"type": "CHANGE_MODE", "mode": mode,
+                                           **({"opponent": opponent} if mode == "TRAINING" else {})})
+                    async for raw in ws:
+                        try:
+                            message = json.loads(raw)
+                            if not isinstance(message, dict):
+                                raise ValueError("Expected JSON object")
+                        except (ValueError, TypeError, UnicodeError):
+                            journal.write("invalid_platform_json")
+                            continue
+                        # Transport/send errors must leave this loop and reconnect.
+                        try:
+                            await controller.handle(message)
+                        except (KeyError, TypeError, ValueError) as exc:
+                            journal.write("invalid_platform_message", {"reason": type(exc).__name__,
+                                                                      "type": message.get("type")})
+                        if message.get("type") == "MATCH_FINISHED":
+                            completed += 1
+                            delay = 0.5
+                            if stop_after and completed >= stop_after:
+                                return
+                    # A normal close can also carry a terminal platform code.
+                    if ws.close_code in STOP_CODES:
+                        journal.write("terminal_close", {"code": ws.close_code})
+                        LOG.error("Connection stopped by platform (code %s)", ws.close_code)
+                        return
+            except InvalidStatus as exc:
+                code = exc.response.status_code
+                journal.write("handshake_failed", {"status": code})
+                if code in {401, 403}:
+                    raise RuntimeError(f"Connection rejected (HTTP {code}); check bot token/status") from None
+            except ConnectionClosed as exc:
+                code = exc.rcvd.code if exc.rcvd else None
+                journal.write("disconnected", {"code": code})
+                if code in STOP_CODES:
+                    LOG.error("Connection stopped by platform (code %s); automatic retry disabled", code)
+                    return
+            except (OSError, TimeoutError) as exc:
+                journal.write("connection_error", {"reason": type(exc).__name__})
+            if time.monotonic() - opened_at > 30:
+                delay = 0.5
+            await asyncio.sleep(delay + random.uniform(0, delay * 0.2))
+            delay = min(10, delay * 2)
+    finally:
+        await worker.close()
+        journal.close()
