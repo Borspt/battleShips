@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import os
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -51,7 +52,10 @@ def main():
         parser.error("Use wss://, or ws:// only for a local test server")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        asyncio.run(run_bot(url=url, token=token, strategy=args.strategy, mode=args.mode,
+        from .haki_session import HAKI_STRATEGY
+        from .haki_lock import haki_process_lock
+        with haki_process_lock() if args.strategy == HAKI_STRATEGY else nullcontext():
+            asyncio.run(run_bot(url=url, token=token, strategy=args.strategy, mode=args.mode,
                             opponent=args.opponent, log_dir=args.log_dir, budget_ms=args.budget_ms,
                             reserve_ms=args.reserve_ms, allow_bonuses=args.allow_bonuses,
                             stop_after=args.stop_after, opponent_ratings_file=args.opponent_ratings_file,

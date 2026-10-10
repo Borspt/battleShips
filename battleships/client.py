@@ -21,19 +21,40 @@ LOG = logging.getLogger(__name__)
 STOP_CODES = {4001, 4002, 4004, 4005}
 
 
-async def session_messages(ws, session):
+async def session_messages(ws, session, controller=None):
     if session is None:
         async for raw in ws:
             yield raw
         return
     while True:
+        if controller is not None:
+            from .haki_transport import HakiTransportStopped
+            controller.check_resync()
+            if controller.idle_stop_requested():
+                raise HakiTransportStopped("OPERATOR_STOP")
         try:
             # Нет ответа/матча: это не доказательство отключения тренировок.
             # Заканчиваем запуск, не переключаемся в рейтинг наугад.
             waiting_for_mode_or_training = not session.active and (
                 not session.confirmed or session.mode == "TRAINING")
-            raw = await asyncio.wait_for(ws.recv(),
-                session.idle_timeout if waiting_for_mode_or_training else None)
+            if controller is None:
+                raw = await asyncio.wait_for(ws.recv(),
+                    session.idle_timeout if waiting_for_mode_or_training else None)
+            else:
+                wait_started = time.monotonic()
+                while True:
+                    controller.check_resync()
+                    if controller.idle_stop_requested():
+                        raise HakiTransportStopped("OPERATOR_STOP")
+                    wait = 0.5
+                    if controller.resync_deadline is not None:
+                        wait = min(wait, max(0.001, controller.resync_deadline - time.monotonic()))
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), wait)
+                        break
+                    except TimeoutError:
+                        if waiting_for_mode_or_training and time.monotonic() - wait_started >= session.idle_timeout:
+                            raise
         except TimeoutError:
             session.stop_reason = "MODE_OR_MATCH_WAIT_TIMEOUT"
             return
@@ -288,6 +309,7 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                   log_dir: str, budget_ms: int, reserve_ms: int, allow_bonuses: bool,
                   stop_after: int = 0, opponent_ratings_file: str | None = None,
                   stop_on_loss: bool = False):
+    from .haki_transport import HakiController, HakiTransportStopped
     session = HakiSession(mode, opponent) if strategy == HAKI_STRATEGY else None
     # Для Хаки это обязательное правило, даже если забыли флаг в ручной команде.
     stop_on_loss = stop_on_loss or session is not None
@@ -312,7 +334,8 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                                    close_timeout=2, max_size=4 * 1024 * 1024, proxy=None) as ws:
                     journal.write("connected")
                     LOG.info("Connected; requested mode: %s", session.mode if session else mode)
-                    controller = Controller(ws.send, worker, journal, budget_ms=budget_ms,
+                    controller_type = HakiController if session else Controller
+                    controller = controller_type(ws.send, worker, journal, budget_ms=budget_ms,
                                             reserve_ms=reserve_ms, allow_bonuses=allow_bonuses,
                                             opponent_directory=directory)
                     if session:
@@ -320,7 +343,7 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                     await controller.emit(session.command() if session else
                         {"type": "CHANGE_MODE", "mode": mode,
                          **({"opponent": opponent} if mode == "TRAINING" else {})})
-                    async for raw in session_messages(ws, session):
+                    async for raw in session_messages(ws, session, controller if session else None):
                         try:
                             message = json.loads(raw)
                             if not isinstance(message, dict):
@@ -339,6 +362,9 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                         if message.get("type") == "MATCH_FINISHED":
                             completed += 1
                             delay = 0.5
+                            if session and controller.stop_requested():
+                                journal.write("haki_session_stopped", {"reason": "OPERATOR_STOP", "completed": completed})
+                                return
                             if (stop_on_loss and message.get("outcome") == "LOSS"
                                     and (session is None or session.should_stop)):
                                 details = {"completed": completed, "end_reason": message.get("endReason")}
@@ -367,6 +393,10 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                         journal.write("terminal_close", {"code": ws.close_code})
                         LOG.error("Connection stopped by platform (code %s)", ws.close_code)
                         return
+            except HakiTransportStopped as exc:
+                journal.write("haki_session_stopped", {"reason": str(exc)})
+                LOG.warning("Haki stopped without reconnect: %s", exc)
+                return
             except InvalidStatus as exc:
                 code = exc.response.status_code
                 journal.write("handshake_failed", {"status": code})
