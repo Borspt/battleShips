@@ -219,6 +219,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
                     "opening": len(own[:OPENING]), "openingBorder": sum(on_border(e["cell"]) for e in own[:OPENING]),
                     "shotCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own},
                     "earlyCells": {f"{e['cell']['row']},{e['cell']['column']}" for e in own[:EARLY]},
+                    "earlyHits": sum(e["result"] in ("HIT", "SUNK") for e in own[:EARLY]),
                     "fleetCells": {f"{c['row']},{c['column']}" for ship in placed or [] for c in ship["cells"]},
                 })
 
@@ -265,6 +266,8 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
             "shotCells": {cell: round(count / len(games), 2) for cell, count in cells.most_common()},
             # Доля партий, в которых клетка попала в первые EARLY выстрелов бота: по ней прячем флот в «Голодных играх».
             "earlyCells": {cell: round(count / len(games), 2) for cell, count in early.most_common()},
+            # Сколько раз бот попадает первыми EARLY выстрелами: по нам против остальных — видно, выучил ли он нас.
+            "earlyHits": round(sum(game["earlyHits"] for game in games) / len(games), 2) if games else None,
             # Доля расстановок, в которых клетка занята кораблём, и разброс этой доли по полю: у случайной
             # расстановки на 25 партиях разброс около 0,08, у бота с любимыми местами — от 0,10.
             "fleetCells": {cell: round(count / placed, 2) for cell, count in fleet.most_common()} if placed else {},
