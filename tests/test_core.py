@@ -116,6 +116,61 @@ class ShootingTest(unittest.TestCase):
         shooter = ProbabilityStrategy(Rules(), random.Random(1), HARD_BIAS)
         self.assertIn(shooter.next_shot(), {(0, 0), (0, 9), (9, 0), (9, 9)})
 
+    def test_board_reports_distance_to_nearest_afloat_ship(self):
+        board = Board([[(0, 0), (0, 1)], [(5, 5)]])
+        self.assertEqual((board.distance((0, 3)), board.distance((4, 4)), board.distance((0, 0))), (2, 2, 0))
+        board.receive((5, 5))
+        self.assertEqual(board.distance((4, 4)), 7)
+        board.receive((0, 0))
+        self.assertEqual(board.distance((0, 0)), 0)  # подбитая клетка непотопленного корабля — всё ещё корабль
+
+    def test_endgame_counts_exact_configurations(self):
+        """Один однопалубный на поле 3×3: после промаха в центр остаётся 8 равновероятных клеток."""
+        shooter = ProbabilityStrategy(Rules(rows=3, columns=3, fleet=(1,)), random.Random(1))
+        shooter.on_shot_result((1, 1), "MISS")
+        configs = shooter._endgame_configs()
+        self.assertEqual(len(configs), 8)
+        self.assertEqual(shooter._endgame_weights(configs), [1, 1, 1, 1, 0, 1, 1, 1, 1])
+
+    def test_distance_answer_narrows_configurations(self):
+        rules = Rules(rows=5, columns=5, fleet=(1,))
+        shooter = ProbabilityStrategy(rules, random.Random(1), distance_uses=1)
+        kind, cell = shooter.next_action()
+        self.assertEqual(kind, "DISTANCE")
+        shooter.on_distance((0, 0), 3)
+        self.assertEqual(shooter.distance_uses, 0)
+        cells = {divmod(next(iter([i for i in range(25) if mask >> i & 1])), 5) for mask, _, _ in shooter._endgame_configs()}
+        self.assertEqual(cells, {(0, 3), (1, 2), (2, 1), (3, 0)})
+        self.assertEqual(shooter.next_action()[0], "SHOOT")
+        self.assertIn(shooter.next_shot(), cells)
+
+    def test_distance_explained_by_since_sunk_ship_does_not_constrain_the_rest(self):
+        rules = Rules(rows=5, columns=5, fleet=(1, 1))
+        shooter = ProbabilityStrategy(rules, random.Random(1))
+        shooter.on_distance((0, 0), 2)          # ближайший корабль был в двух клетках от угла...
+        shooter.on_shot_result((0, 2), "SUNK")  # ...и это он, теперь потоплен
+        cells = {divmod(next(i for i in range(25) if mask >> i & 1), 5) for mask, _, _ in shooter._endgame_configs()}
+        self.assertIn((4, 4), cells)      # второй корабль может быть дальше двух клеток
+        self.assertNotIn((1, 0), cells)   # но ближе двух клеток его не было и нет
+
+    def test_distance_is_not_spent_before_endgame_or_with_unfinished_ship(self):
+        shooter = ProbabilityStrategy(Rules(), random.Random(1), distance_uses=2)
+        self.assertEqual(shooter.next_action()[0], "SHOOT")
+        late = ProbabilityStrategy(Rules(rows=5, columns=5, fleet=(2, 1)), random.Random(1), distance_uses=2)
+        late.on_shot_result((2, 2), "HIT")
+        self.assertEqual(late.next_action()[0], "SHOOT")
+
+    def test_distance_saves_shots_and_respects_shot_limit(self):
+        rules = Rules()
+        mean = {}
+        for uses in (0, 2):
+            rng = random.Random(33)
+            games = [play_solo(rules, ProbabilityStrategy(rules, random.Random(rng.random()), distance_uses=uses),
+                               random_placement(rules, rng)) for _ in range(150)]
+            mean[uses] = sum(g.shots for g in games) / len(games)
+            self.assertTrue(all(g.destroyed and g.queries <= uses and g.shots + g.queries <= rules.shot_limit for g in games))
+        self.assertLess(mean[2], mean[0] - 3)
+
     def test_defended_cell_is_shot_again(self):
         shooter = ProbabilityStrategy(Rules(), random.Random(1))
         shooter.on_shot_result((4, 4), "DEFENDED")

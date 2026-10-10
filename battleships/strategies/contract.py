@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import model
+from ..geometry import placement_distances
 from ..placement import random_placement
 from ..rules import Rules
 from .adaptation import Plan, ProfileBook, choose_plan
@@ -66,7 +67,19 @@ class ProbabilityBot:
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
-        return model.Action.shoot(model.Cell(*shooter.next_shot()))
+        answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
+        for answer in answers:
+            asked = answer.get("requestedCell") or {}
+            shooter.on_distance((asked.get("row", -1), asked.get("column", -1)), answer["distance"])
+        shooter.distance_uses = self._distance_budget(state, len(answers))
+        kind, (row, column) = shooter.next_action()
+        if kind == "DISTANCE":
+            return model.Action("USE_BONUS", cell=model.Cell(row, column), bonus="DISTANCE")
+        return model.Action.shoot(model.Cell(row, column))
+
+    def _distance_budget(self, state: model.GameState, used: int) -> int:
+        """Сколько запросов DISTANCE стратегия вправе потратить сейчас. Базовый бот бонусы не тратит."""
+        return 0
 
     def _place(self, rules: model.Rules, placement) -> list[list[model.Cell]]:
         ships = placement(core_rules(rules), self.rng)
@@ -91,3 +104,30 @@ class ProbabilityBot:
                 log.write(json.dumps(record, ensure_ascii=False) + "\n")
         except OSError:
             pass
+
+
+class ProbabilityBonusBot(ProbabilityBot):
+    """ProbabilityBot, который в концовке тратит бонус DISTANCE.
+
+    Запуск: --strategy battleships.strategies.contract:ProbabilityBonusBot --allow-bonuses,
+    боту в «Кабинете команды» должны быть выставлены использования DISTANCE.
+    Без флага --allow-bonuses оболочка отклонит бонус и подставит запасной выстрел.
+    """
+
+    max_distance_queries = 2  # третий запрос даёт 2–4 п. п. к победе и окупается только при K = 40
+    safe_lead = 0.55  # цела большая доля нашего флота — партия и так выиграна, рейтинг не тратим
+
+    def __init__(self):
+        super().__init__()
+        for length in (1, 2, 3, 4):  # таблицы расстояний считаются десятки миллисекунд — не в свой ход
+            placement_distances(10, 10, length)
+
+    def _distance_budget(self, state: model.GameState, used: int) -> int:
+        if state.shots_left <= 1:  # запрос списывает выстрел из лимита: последний оставляем на выстрел
+            return 0
+        if state.ships and state.rules.modifier != "BIRD_BOX":
+            fleet = sum(len(ship) for ship in state.ships)
+            lost = len({cell for cell, result in state.opponent_shots if result in ("HIT", "SUNK")})
+            if fleet and (fleet - lost) / fleet > self.safe_lead:
+                return 0
+        return max(0, min(state.bonuses.get("DISTANCE", 0), self.max_distance_queries - used))

@@ -32,6 +32,11 @@ class Board:
         self.afloat[number] -= 1
         return "HIT" if self.afloat[number] else "SUNK"
 
+    def distance(self, cell: Cell) -> int | None:
+        """Бонус DISTANCE: манхэттенское расстояние до ближайшей клетки непотопленного корабля."""
+        alive = [c for c, number in self.owner.items() if self.afloat[number]]
+        return min((abs(cell[0] - row) + abs(cell[1] - column) for row, column in alive), default=None)
+
     @property
     def destroyed(self) -> bool:
         return not any(self.afloat)
@@ -42,6 +47,7 @@ class SoloResult:
     shots: int  # сделано выстрелов
     hits: int
     destroyed: bool  # потоплен ли флот в пределах лимита выстрелов
+    queries: int = 0  # применено DISTANCE; каждое списывает выстрел из лимита, но не тратит ход
 
 
 @dataclass
@@ -52,22 +58,30 @@ class MatchResult:
     hits: tuple[int, int]
 
 
-def _shoot(rules: Rules, shooter: Strategy, board: Board) -> tuple[str, Cell]:
-    cell = shooter.next_shot()
+def _shoot(rules: Rules, shooter: Strategy, board: Board, budget: int) -> tuple[str, Cell, int]:
+    """Один выстрел; перед ним стратегия может потратить запросы DISTANCE, пока в лимите есть запас."""
+    queries = 0
+    kind, cell = shooter.next_action()
+    while kind == "DISTANCE" and budget - queries > 1:
+        shooter.on_distance(cell, board.distance(cell))
+        queries += 1
+        kind, cell = shooter.next_action()
+    if kind != "SHOOT":
+        cell = shooter.next_shot()
     result = board.receive(cell)
     reported = "HIT" if result == "SUNK" and not rules.announces_sunk else result
     shooter.on_shot_result(cell, reported)
-    return reported, cell
+    return reported, cell, queries
 
 
 def play_solo(rules: Rules, shooter: Strategy, ships: list[Ship]) -> SoloResult:
     """Стрельба по одной расстановке без соперника: метрика качества стрельбы и модель «Спидрана»."""
     board = Board(ships)
-    shots = 0
-    while shots < rules.shot_limit and not board.destroyed:
-        _shoot(rules, shooter, board)
+    shots = queries = 0
+    while shots + queries < rules.shot_limit and not board.destroyed:
+        queries += _shoot(rules, shooter, board, rules.shot_limit - shots - queries)[2]
         shots += 1
-    return SoloResult(shots, board.hits, board.destroyed)
+    return SoloResult(shots, board.hits, board.destroyed, queries)
 
 
 def play_match(rules: Rules, first: StrategyFactory, second: StrategyFactory, rng: random.Random) -> MatchResult:
@@ -94,8 +108,8 @@ def play_match(rules: Rules, first: StrategyFactory, second: StrategyFactory, rn
         target = boards[1 - current]
         left_in_turn = rules.shots_per_turn
         while left_in_turn and shots[current] < rules.shot_limit:
-            result, cell = _shoot(rules, players[current], target)
-            shots[current] += 1
+            result, cell, queries = _shoot(rules, players[current], target, rules.shot_limit - shots[current])
+            shots[current] += 1 + queries
             if rules.sees_opponent_shots:
                 players[1 - current].on_opponent_shot(cell, result)
             if target.destroyed:

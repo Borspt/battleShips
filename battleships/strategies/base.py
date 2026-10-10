@@ -27,6 +27,13 @@ class Strategy:
         """Клетка для SHOOT. Обязана вернуть клетку на поле и не бросать исключений."""
         raise NotImplementedError
 
+    def next_action(self) -> tuple[str, Cell]:
+        """("SHOOT", клетка) или ("DISTANCE", клетка запроса) — для стратегий, умеющих тратить бонус."""
+        return "SHOOT", self.next_shot()
+
+    def on_distance(self, cell: Cell, distance: int) -> None:
+        """Ответ на запрос DISTANCE."""
+
     def on_shot_result(self, cell: Cell, result: str) -> None:
         """Результат своего выстрела: MISS, HIT, SUNK, DEFENDED или MINE."""
 
