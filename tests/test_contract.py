@@ -292,6 +292,24 @@ class ProbabilityBotTest(unittest.TestCase):
         stepped = [(Cell(9, 9), "MINE"), (Cell(9, 0), "MINE")]
         self.assertLessEqual(len(openings([{"bonus": "MINE", "uses": 2}], stepped)), 16)
 
+    def test_unanswered_shot_is_not_repeated_while_its_result_is_late(self):
+        bot = ProbabilityBot()
+        bot.book = ProfileBook(Path("no-such-profiles.json"))
+        state = state_for("SPEEDRUN")
+        state.ships = None
+        first = bot.choose_action(state, 150).cell
+        late = [bot.choose_action(state, 150).cell for _ in range(3)]  # результат первого выстрела ещё не пришёл
+        self.assertNotIn(first, late)
+        self.assertEqual(len(set(late)), 3)
+        later = [bot.choose_action(state, 150).cell for _ in range(bot.PENDING_TURNS + 2)]
+        self.assertIn(first, later)  # ответа нет слишком долго — выстрел мог не дойти, клетка снова в игре
+        state.shots = [(first, "HIT")]  # результат пришёл: попадание учитывается как обычно
+        follow = bot.choose_action(state, 150).cell
+        self.assertEqual(abs(follow.row - first.row) + abs(follow.column - first.column), 1)
+        state.shots = []  # новая партия начинается с чистой памяти
+        bot.choose_action(state, 150)
+        self.assertEqual(len(bot._pending), 1)
+
     def test_defended_cell_is_shot_again(self):
         state = state_for()
         state.shots = [(Cell(4, 4), "DEFENDED")]

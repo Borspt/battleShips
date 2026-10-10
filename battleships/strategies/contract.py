@@ -48,6 +48,11 @@ class ProbabilityBot:
     def __init__(self):
         self.rng = random.Random()
         self.book = ProfileBook()
+        # Выстрелы, на которые ещё не пришёл ответ: клетка → сколько ходов мы его ждём. При задержках сети
+        # платформа просит следующий ход раньше, чем отдаёт результат прошлого; без этой памяти бот стрелял
+        # в ту же клетку повторно (в «Спидране» 100 выстрелов по 42 клеткам вместо 50).
+        self._pending: dict[model.Cell, int] = {}
+        self._seen_shots = 0
 
     def plan(self, state: model.GameState) -> Plan:
         typical = self.book.typical_early() if state.rules.modifier == "HUNGER_GAMES" else None
@@ -76,10 +81,28 @@ class ProbabilityBot:
             asked = answer.get("requestedCell") or {}
             shooter.on_distance((asked.get("row", -1), asked.get("column", -1)), answer["distance"])
         shooter.distance_uses = self._distance_budget(state, len(answers))
+        self._block_pending(state, shooter)
         kind, (row, column) = shooter.next_action()
         if kind == "DISTANCE":
             return model.Action("USE_BONUS", cell=model.Cell(row, column), bonus="DISTANCE")
+        self._pending[model.Cell(row, column)] = 0
         return model.Action.shoot(model.Cell(row, column))
+
+    PENDING_TURNS = 6  # дольше ответ не ждём: выстрел мог не дойти, клетку снова можно обстрелять
+
+    def _block_pending(self, state: model.GameState, shooter: ProbabilityStrategy) -> None:
+        """Клетки, по которым выстрел уже отправлен, а результат не пришёл, в этот ход не выбираем."""
+        if len(state.shots) < self._seen_shots:  # началась новая партия
+            self._pending.clear()
+        self._seen_shots = len(state.shots)
+        answered = {cell for cell, _ in state.shots}
+        columns = state.rules.columns
+        for cell in list(self._pending):
+            self._pending[cell] += 1
+            if cell in answered or self._pending[cell] > self.PENDING_TURNS:
+                del self._pending[cell]
+            elif 0 <= cell.row < state.rules.rows and 0 <= cell.column < columns:
+                shooter.empty |= (1 << cell.row * columns + cell.column) & ~(shooter.hits | shooter.sunk)
 
     def _distance_budget(self, state: model.GameState, used: int) -> int:
         """Сколько запросов DISTANCE стратегия вправе потратить сейчас. Базовый бот бонусы не тратит."""
