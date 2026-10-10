@@ -66,6 +66,27 @@ async def session_messages(ws, session, controller=None):
 
 
 BETS_FILE = Path("scouting/bets.json")
+# Соперник, дважды подряд перебивший нашу ставку, ставит больше нас: в его режиме мы теряем ставку почти
+# всегда. Тогда 15 торгов с ним ставим символически, потом пробуем снова.
+FOLD_AFTER, FOLD_FOR, FOLD_AMOUNT = 2, 15, 0.1
+_outbid: dict[str, list[int]] = {}  # соперник -> [проиграно торгов подряд, сколько ещё торгов пасуем]
+
+
+def fold_or(amount: float, opponent: dict) -> float:
+    state = _outbid.setdefault(str(opponent.get("botId") or opponent.get("builtInBot")), [0, 0])
+    if state[1] > 0:
+        state[1] -= 1
+        return min(amount, FOLD_AMOUNT)
+    return amount
+
+
+def bet_result(opponent: dict, won: bool) -> None:
+    state = _outbid.setdefault(str(opponent.get("botId") or opponent.get("builtInBot")), [0, 0])
+    if state[1] > 0:
+        return  # пока пасуем, проигранные торги не считаем
+    state[0] = 0 if won else state[0] + 1
+    if state[0] >= FOLD_AFTER:
+        state[0], state[1] = 0, FOLD_FOR
 
 
 def choose_bet(setting: str, opponent: dict, path: Path | None = None) -> tuple[str, float]:
@@ -253,11 +274,17 @@ class Controller:
             # свою сохраняет; бо́льшая ставка выбирает режим. Включается переменной BATTLESHIPS_BET:
             # "МОДИФИКАТОР:очки" — одна ставка на всех, "FILE" — по соперникам из scouting/bets.json
             # (файл перечитывается перед каждой ставкой). Без переменной не ставим.
-            wanted, amount = choose_bet(os.environ.get("BATTLESHIPS_BET", ""), msg.get("opponent") or {})
+            self.bet_opponent = msg.get("opponent") or {}
+            wanted, amount = choose_bet(os.environ.get("BATTLESHIPS_BET", ""), self.bet_opponent)
+            amount = fold_or(amount, self.bet_opponent)
             if wanted in (msg.get("modifiers") or []) and 0 < amount <= float(msg.get("maxAmount") or 0):
                 await self.emit({"type": "PLACE_BET", "modifier": wanted, "amount": amount})
             else:
                 self.journal.write("bet_skipped", {"reason": "rating spending disabled", "offered": msg.get("modifiers")})
+            return
+        if kind == "BETTING_FINISHED":
+            if os.environ.get("BATTLESHIPS_BET"):
+                bet_result(getattr(self, "bet_opponent", {}), bool(msg.get("betWon")))
             return
         if self.state is None:
             return

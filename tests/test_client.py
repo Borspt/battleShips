@@ -167,6 +167,20 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(m["modifier"], m["amount"]) for m in self.sent],
                          [tuple(table["teams"]["Есть пробитие"]), tuple(table["default"])])
 
+    async def test_outbid_twice_means_token_bets_for_a_while(self):
+        from battleships import client
+        client._outbid.clear()
+        offer = {"type": "BET_REQUESTED", "modifiers": ["SPEEDRUN"], "maxAmount": 50.0, "opponent": {"botId": "x"}}
+        lost = {"type": "BETTING_FINISHED", "modifier": "BIRD_BOX", "betWon": False}
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "SPEEDRUN:5"}):
+            for _ in range(2):
+                await self.client.handle(offer)
+                await self.client.handle(lost)
+            await self.client.handle(offer)
+            await self.client.handle(dict(offer, opponent={"botId": "другой"}))
+        self.assertEqual([m["amount"] for m in self.sent], [5.0, 5.0, client.FOLD_AMOUNT, 5.0])
+        client._outbid.clear()
+
     def test_broken_bet_file_means_no_bet(self):
         from battleships.client import choose_bet
         self.assertEqual(choose_bet("FILE", {"teamName": "x"}, Path("нет-такого-файла.json")), ("", 0.0))
