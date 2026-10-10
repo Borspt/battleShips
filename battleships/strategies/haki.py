@@ -6,11 +6,11 @@ import math
 import time
 
 from .. import model
-from ..geometry import placement_distances
+from ..geometry import bits, placement_distances, placements
 from ..placement import random_placement
 from .adaptation import Plan, choose_plan
 from .contract import ProbabilityBot, core_rules
-from .probability import ProbabilityStrategy, MIN_QUERY_BITS, ENDGAME_SHIPS
+from .probability import ProbabilityStrategy, ENDGAME_SHIPS
 from .haki_memory import HakiBook
 
 
@@ -44,19 +44,31 @@ class HakiEndgameStrategy(ProbabilityStrategy):
         super().__init__(*args, **kwargs)
         self.search_ms = search_ms
 
-    def next_action(self):
-        if (self.rules.modifier == 'SCHRODINGER_SHIP' and self.distance_uses > 0
-                and not self.hits and not self.known_ship):
-            # All observed hits have been proved sunk by geometry/fleet lengths.
-            # Only in this state do our remaining ships equal the server's afloat
-            # fleet. An unresolved HIT may already be a destroyed ship: DISTANCE
-            # must not be interpreted against that uncertain fleet.
-            configs = self._endgame_configs()
-            if configs and len(configs) > 1:
-                index, information = self._best_query(configs)
-                if information >= MIN_QUERY_BITS:
-                    return 'DISTANCE', divmod(index, self.rules.columns)
-        return super().next_action()
+    def _infer_sunk(self):
+        if not self.rules.no_touching or self.rules.announces_sunk:
+            return
+        super()._infer_sunk()
+        # A free neighbouring cell does not mean a remaining longer ship fits.
+        # Prove that no complete legal longer placement can contain this group;
+        # only then treat it as sunk. Never use opponent priors as proof.
+        changed = True
+        while changed:
+            changed = False
+            pending = self.hits
+            while pending:
+                group = self._group(next(bits(pending)))
+                pending &= ~group
+                size = group.bit_count()
+                if size not in self.remaining:
+                    continue
+                could_grow = any(
+                    mask & group == group and not mask & (self.empty | self.sunk)
+                    and not around & self.hits
+                    for length in set(self.remaining) if length > size
+                    for mask, around, _ in placements(self.rules.rows, self.rules.columns, length))
+                if not could_grow:
+                    self._sink(group)
+                    changed = True
 
     def _endgame_configs(self):
         if (len(self.remaining) <= 2 or
@@ -185,7 +197,7 @@ class HakiObservationBot(ProbabilityBot):
         if state.ships is None and not state.shots:
             self._record(state, plan, placed=False)
         shooter = HakiEndgameStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
-                                     spread=self._spread(state))
+                                     spread=self._spread(state), sunk_checks=False)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE"]
