@@ -7,6 +7,7 @@
     python -m battleships.scouting --offline  # только пересобрать из уже скачанного
     python -m battleships.scouting --bot Kraken
     python -m battleships.scouting --plans    # какие планы выбирал наш бот и чем кончились партии
+    python -m battleships.scouting --watch 300   # автообновление раз в 5 минут, пока не остановят
 
 Вход — учётная запись участника из BATTLESHIPS_LOGIN и BATTLESHIPS_PASSWORD (файл .env).
 Скачанные реплеи лежат в runtime/scouting/ и в репозиторий не попадают: это десятки мегабайт.
@@ -231,7 +232,9 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
 def save_profiles(profiles: dict[str, dict], path: Path = PROFILES) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     ordered = dict(sorted(profiles.items()))  # стабильный порядок — читаемые диффы в git
-    path.write_text(json.dumps(ordered, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    draft = path.with_suffix(".tmp")  # пишем рядом и подменяем: играющий бот не увидит половину файла
+    draft.write_text(json.dumps(ordered, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    draft.replace(path)
     return path
 
 
@@ -330,6 +333,36 @@ def card(profile: dict, rows: int = 10, columns: int = 10) -> str:
     return "\n".join(lines)
 
 
+def watch(args) -> None:
+    """Автообновление: один вход на всё время работы, новый — только если сессия истекла."""
+    from .__main__ import load_env
+
+    load_env(args.env_file)
+    login, password = os.environ.get("BATTLESHIPS_LOGIN"), os.environ.get("BATTLESHIPS_PASSWORD")
+    if not login or not password:
+        raise SystemExit("Нужны BATTLESHIPS_LOGIN и BATTLESHIPS_PASSWORD в окружении или в .env")
+    platform = Platform()
+    platform.login(login, password)
+    while True:
+        stamp = datetime.now().strftime("%H:%M:%S")
+        try:
+            new = sync(platform, STORE, args.max_new, args.full)
+            if new or not PROFILES.exists():
+                profiles = build_profiles(STORE, args.team)
+                save_profiles(profiles)
+                print(f"{stamp} новых матчей {new}, ботов {len(profiles)}", flush=True)
+            else:
+                print(f"{stamp} новых матчей нет", flush=True)
+        except RuntimeError as error:
+            print(f"{stamp} сбой: {error}", flush=True)
+            if "HTTP 401" in str(error):
+                try:
+                    platform.login(login, password)
+                except RuntimeError as relogin:
+                    print(f"{stamp} вход не удался: {relogin}", flush=True)
+        time.sleep(args.watch)
+
+
 def main() -> None:
     from .__main__ import load_env
 
@@ -341,8 +374,13 @@ def main() -> None:
     parser.add_argument("--plans", action="store_true", help="показать, какие планы выбирал наш бот и чем кончились партии")
     parser.add_argument("--team", default="Нейро Мугивары", help="наша команда — для счёта личных встреч")
     parser.add_argument("--env-file", default=".env")
+    parser.add_argument("--watch", type=int, metavar="СЕКУНД",
+                        help="не выходить: докачивать матчи и пересобирать профили с этим интервалом")
     args = parser.parse_args()
 
+    if args.watch:
+        watch(args)
+        return
     if not args.offline:
         load_env(args.env_file)
         login, password = os.environ.get("BATTLESHIPS_LOGIN"), os.environ.get("BATTLESHIPS_PASSWORD")
