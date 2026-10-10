@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..placement import edge_placement, interior_placement, random_placement
-from ..scouting import STORE, profile_for
+from ..scouting import PROFILES, profile_for
 from .probability import HARD_BIAS, EdgeBias
 
 # Подобрано в симуляторе: против флота у краёв 52 выстрела до потопления вместо 63 без поправки,
@@ -74,9 +74,9 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None) -> Plan:
 
 
 class ProfileBook:
-    """Профили из runtime/scouting/profiles.json; файл перечитывается, когда разведка его обновила."""
+    """Профили из scouting/profiles.json; файл перечитывается, когда он изменился (разведка или git pull)."""
 
-    def __init__(self, path: Path = STORE / "profiles.json"):
+    def __init__(self, path: Path = PROFILES):
         self.path = path
         self.loaded_at = None
         self.profiles: dict[str, dict] = {}

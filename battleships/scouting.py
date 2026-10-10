@@ -8,7 +8,9 @@
     python -m battleships.scouting --bot Kraken
 
 Вход — учётная запись участника из BATTLESHIPS_LOGIN и BATTLESHIPS_PASSWORD (файл .env).
-Данные лежат в runtime/scouting/, в репозиторий не попадают.
+Скачанные реплеи лежат в runtime/scouting/ и в репозиторий не попадают: это десятки мегабайт.
+Готовые профили — в scouting/profiles.json, этот файл в репозитории: после запуска разведки
+его надо закоммитить, чтобы профили получила вся команда.
 
 Для выбора стратегии под соперника:
 
@@ -27,13 +29,16 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .model import OpponentInfo
 
 BASE_URL = "https://hackathon.no-offence.ru/api/v1"
-STORE = Path("runtime/scouting")
+STORE = Path("runtime/scouting")  # реплеи и лидерборд, локально
+PROFILES = Path("scouting/profiles.json")  # профили, в репозитории
+DOWNLOADS = 4  # одновременных запросов к платформе
 OPENING = 15  # сколько первых выстрелов партии считаем «дебютом» стрелка
 
 
@@ -57,12 +62,16 @@ class Platform:
         data = None if body is None else json.dumps(body).encode()
         headers = {"Accept": "application/json"} | ({"Content-Type": "application/json"} if data else {})
         request = urllib.request.Request(self.base_url + path, data=data, headers=headers, method=method)
-        try:
-            with self.opener.open(request, timeout=20) as response:
-                payload = json.load(response)
-        except urllib.error.HTTPError as error:
-            raise RuntimeError(f"{method} {path}: HTTP {error.code}") from None
-        return payload.get("value")
+        for attempt in range(4):
+            try:
+                with self.opener.open(request, timeout=20) as response:
+                    return json.load(response).get("value")
+            except urllib.error.HTTPError as error:
+                raise RuntimeError(f"{method} {path}: HTTP {error.code}") from None
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as error:  # сеть моргнула — пробуем ещё
+                if attempt == 3:
+                    raise RuntimeError(f"{method} {path}: сеть недоступна ({type(error).__name__})") from None
+                time.sleep(1 + attempt)
 
     def get(self, path: str):
         return self.request("GET", path)
@@ -84,11 +93,14 @@ def sync(platform: Platform, store: Path = STORE, max_new: int = 400, full: bool
         page_count = listing["pageCount"]
         finished = [m["matchId"] for m in listing["matches"] if m["status"] == "FINISHED"]
         missing = [match_id for match_id in finished if not (matches_dir / f"{match_id}.json").exists()]
-        for match_id in missing[: max_new - new]:
+        def download(match_id: str) -> None:
             detail = platform.get(f"/matches/{match_id}")
             (matches_dir / f"{match_id}.json").write_text(json.dumps(detail, ensure_ascii=False), encoding="utf-8")
-            new += 1
-            time.sleep(0.05)  # не грузим платформу
+
+        batch = missing[: max_new - new]
+        with ThreadPoolExecutor(DOWNLOADS) as pool:
+            list(pool.map(download, batch))
+        new += len(batch)
         if finished and not missing and not full:
             break  # список идёт от новых к старым: дальше всё уже скачано
         page += 1
@@ -215,14 +227,14 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
     return profiles
 
 
-def save_profiles(profiles: dict[str, dict], store: Path = STORE) -> Path:
-    path = store / "profiles.json"
-    path.write_text(json.dumps(profiles, ensure_ascii=False, indent=1), encoding="utf-8")
+def save_profiles(profiles: dict[str, dict], path: Path = PROFILES) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ordered = dict(sorted(profiles.items()))  # стабильный порядок — читаемые диффы в git
+    path.write_text(json.dumps(ordered, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     return path
 
 
-def load_profiles(store: Path = STORE) -> dict[str, dict]:
-    path = store / "profiles.json"
+def load_profiles(path: Path = PROFILES) -> dict[str, dict]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
@@ -294,10 +306,14 @@ def main() -> None:
         finally:
             platform.logout()
 
-    profiles = build_profiles(STORE, args.team)
-    path = save_profiles(profiles)
     total = len(list((STORE / "matches").glob("*.json")))
-    print(f"Матчей на диске: {total}, ботов: {len(profiles)}, профили: {path}")
+    if total:
+        profiles = build_profiles(STORE, args.team)
+        path = save_profiles(profiles)
+        print(f"Матчей на диске: {total}, ботов: {len(profiles)}, профили: {path} — закоммитьте файл, чтобы поделиться")
+    else:  # реплеев нет — показываем профили из репозитория и не затираем их
+        profiles = load_profiles()
+        print(f"Реплеев на диске нет, показаны профили из {PROFILES}: ботов {len(profiles)}")
     if args.bot:
         needle = args.bot.lower()
         for profile in profiles.values():
