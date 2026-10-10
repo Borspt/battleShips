@@ -111,10 +111,18 @@ class ProbabilityBot:
 
     @staticmethod
     def _spread(state: model.GameState) -> float:
-        """Пока у соперника есть мины, на которые мы ещё не наступили, не даём предсказать наш выстрел."""
+        """Пока у соперника есть мины, на которые мы ещё не наступили, не даём предсказать наш выстрел.
+
+        BATTLESHIPS_SHOT_SPREAD (например 0.2) включает разброс всегда: в поиске стреляем в случайную
+        клетку из тех, чей вес не меньше (1 - spread) от максимума. По умолчанию 0 — поведение прежнее.
+        """
         mines = sum(b.get("uses", 0) for b in (state.opponent or {}).get("bonuses") or [] if b.get("bonus") == "MINE")
         stepped = sum(result == "MINE" for _, result in state.shots)
-        return MINE_SPREAD if mines > stepped else 0.0
+        try:
+            forced = min(0.5, max(0.0, float(os.environ.get("BATTLESHIPS_SHOT_SPREAD", "0") or 0)))
+        except ValueError:
+            forced = 0.0
+        return max(MINE_SPREAD if mines > stepped else 0.0, forced)
 
     def _place(self, rules: model.Rules, placement) -> list[list[model.Cell]]:
         ships = placement(core_rules(rules), self.rng)
