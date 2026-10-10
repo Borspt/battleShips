@@ -23,6 +23,22 @@ MIN_MATCHES = 5
 # При случайной расстановке у края 47% однопалубных. На 164 расстановках «Низких ожиданий» (73% у края)
 # поправка экономит 2,3 выстрела, против случайной расстановки она же стоит 2,5 — поэтому порог высокий.
 SINGLES_SHARE = 0.6
+# «Спидран»: где встроенный HARD ставит однопалубные — доли на 10 000 по 3999 его расстановкам из реплеев,
+# усреднённые по симметриям поля. На краю их не бывает, чаще всего — клетки (2,3), (3,2) и симметричные.
+# На 300 расстановках HARD это 50,2 выстрела до потопления вместо 52,6 с одной поправкой на края.
+SPEEDRUN_SINGLES = (
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,  16,  87,  73,  61,  61,  73,  87,  16,   0,
+      0,  87, 166, 329, 252, 252, 329, 166,  87,   0,
+      0,  73, 329, 160, 228, 228, 160, 329,  73,   0,
+      0,  61, 252, 228,  98,  98, 228, 252,  61,   0,
+      0,  61, 252, 228,  98,  98, 228, 252,  61,   0,
+      0,  73, 329, 160, 228, 228, 160, 329,  73,   0,
+      0,  87, 166, 329, 252, 252, 329, 166,  87,   0,
+      0,  16,  87,  73,  61,  61,  73,  87,  16,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+)
+SPEEDRUN_SINGLES_SMOOTHING = 0.1  # запас на случай, если платформа расставляет не совсем как HARD
 # «Голодные игры»: у бота с любимыми местами бьём туда, где его флот стоял в последних партиях. На реплеях
 # при разбросе от 0,095 это 8,1 попадания за 20 выстрелов вместо 6,5; у случайной расстановки — шум и минус.
 FLEET_SPREAD = 0.095
@@ -44,6 +60,7 @@ class Plan:
     edge_bias: EdgeBias | None
     reason: str
     cell_prior: tuple[float, ...] | None = None  # вес каждой клетки поля в стрельбе: где соперник ставит флот
+    single_prior: tuple[float, ...] | None = None  # то же, но только для однопалубных
 
 
 def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_early: dict | None = None) -> Plan:
@@ -53,7 +70,7 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
     (profile["vsBots"]): против встроенного HARD многие играют иначе. Рейтинг соперника
     на выбор пока не влияет: связи между рейтингом и привычками в данных не видно.
     """
-    placement, bias, reasons, cell_prior = random_placement, None, [], None
+    placement, bias, reasons, cell_prior, single_prior = random_placement, None, [], None, None
     versus_bots = (profile or {}).get("vsBots") or {}
 
     # Поправка в стрельбе — по расстановкам против ботов команд, и чем свежее, тем важнее: сначала
@@ -93,6 +110,8 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
     if modifier == "SPEEDRUN":  # флот расставляет платформа, так же, как HARD
         bias = HARD_BIAS
         reasons.append("в «Спидране» флот стоит как у HARD")
+        single_prior = tuple((share / 10000 + SPEEDRUN_SINGLES_SMOOTHING / 100) * 100 / (1 + SPEEDRUN_SINGLES_SMOOTHING)
+                             for share in SPEEDRUN_SINGLES)
 
     # Расстановку подстраиваем только под встроенных ботов: они не меняются. Боты команд видят
     # наши реплеи и подстраиваются сами: в «Трёх мушкетёрах» флот по краям проиграл 9 партий из 10
@@ -139,7 +158,8 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
             placement.__name__ = "evasive_placement"
             reasons.append(f"флот спрятан от первых выстрелов {origin}")
 
-    return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно", cell_prior)
+    return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно", cell_prior,
+                single_prior)
 
 
 class ProfileBook:

@@ -107,9 +107,16 @@ class ProbabilityBotTest(unittest.TestCase):
 
     def setUp(self):
         # Механику запросов проверяем при прежней цене в 1 очко: при ней окупается один запрос за партию.
-        patcher = mock.patch.object(ProbabilityBonusBot, "distance_price", 1)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for name, value in (("distance_price", 1), ("distance_enabled", True)):
+            patcher = mock.patch.object(ProbabilityBonusBot, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_distance_is_switched_off_by_default(self):
+        with mock.patch.object(ProbabilityBonusBot, "distance_enabled", False):
+            bot = ProbabilityBonusBot()
+            bot.book = ProfileBook(Path("no-such-profiles.json"))
+            self.assertEqual(bot.choose_action(self.endgame_state(), 150).type, "SHOOT")
 
     def test_distance_is_spent_only_while_a_query_is_worth_its_price(self):
         bot = ProbabilityBonusBot()
@@ -306,7 +313,7 @@ class ProbabilityBotWorkerTest(unittest.IsolatedAsyncioTestCase):
             await worker.start()
             state = ProbabilityBotTest().endgame_state()
             action = await worker.call("choose_action", (state, 150), 0.15)
-            self.assertEqual((action.type, action.bonus), ("USE_BONUS", "DISTANCE"))
+            self.assertEqual(action.type, "SHOOT")  # DISTANCE выключен решением команды
         finally:
             os.environ.pop("BATTLESHIPS_DISTANCE_PRICE", None)
             await worker.close()

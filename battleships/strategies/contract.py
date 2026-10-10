@@ -67,7 +67,8 @@ class ProbabilityBot:
         if state.ships is None and not state.shots:  # «Спидран»: расстановки нет, партия начинается с выстрела
             self._record(state, plan, placed=False)
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
-                                      spread=self._spread(state), sunk_checks=True, cell_prior=plan.cell_prior)
+                                      spread=self._spread(state), sunk_checks=True, cell_prior=plan.cell_prior,
+                                      single_prior=plan.single_prior)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
@@ -132,6 +133,8 @@ class ProbabilityBonusBot(ProbabilityBot):
     # такого же бота без бонусов это +13, +8 и +4 п. п. к победе (2,7, 1,6 и 0,8 очка); на платформе два запроса
     # в «Дуэли» дали +7 п. п. вместо +21, поэтому берём половину. Запрос тратится, пока он дороже своей цены.
     distance_worth = (1.35, 0.8, 0.4)
+    # Решение команды от 10.10 17:58: DISTANCE выключен всегда, какой бы ни была цена.
+    distance_enabled = False
     # Сработавшая мина сжигает сопернику остаток хода и весь следующий. В «Трёх мушкетёрах» это около
     # четырёх промахов (+14 п. п. к победе) за 1 очко; в остальных режимах — один выстрел, в минус.
     mine_modifiers = frozenset({"THREE_MUSKETEERS"})
@@ -189,7 +192,7 @@ class ProbabilityBonusBot(ProbabilityBot):
         return max(free, key=lambda cell: (frequency[f"{cell.row},{cell.column}"], self.rng.random()))
 
     def _distance_budget(self, state: model.GameState, used: int) -> int:
-        if state.shots_left <= 1:  # запрос списывает выстрел из лимита: последний оставляем на выстрел
+        if not self.distance_enabled or state.shots_left <= 1:  # запрос списывает выстрел из лимита
             return 0
         if state.rules.modifier == "HUNGER_GAMES":  # выстрелов мало, а запрос стоит выстрела: считаются попадания
             return 0
