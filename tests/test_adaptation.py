@@ -154,8 +154,10 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertEqual(choose_plan("SPEEDRUN", REMOTE, None).edge_bias, HARD_BIAS)
         singles = choose_plan("SPEEDRUN", REMOTE, None).single_prior
         self.assertEqual(len(singles), 100)
-        self.assertLess(singles[0], singles[11])            # на краю HARD однопалубные не ставит
-        self.assertGreater(singles[23], 2 * singles[44])    # (2,3) втрое чаще центра
+        self.assertEqual(singles[0], 0.0)                   # на краю однопалубных не бывает
+        self.assertGreater(singles[22], singles[44])        # (2,2) чаще центра
+        self.assertTrue(choose_plan("SPEEDRUN", REMOTE, None).single_per_quadrant)
+        self.assertFalse(choose_plan(None, REMOTE, None).single_per_quadrant)
         self.assertIsNone(choose_plan(None, REMOTE, None).single_prior)
         self.assertEqual(choose_plan("SPEEDRUN", REMOTE, profile()).edge_bias, HARD_BIAS)
 

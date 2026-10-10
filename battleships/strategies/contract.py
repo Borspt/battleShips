@@ -73,7 +73,8 @@ class ProbabilityBot:
             self._record(state, plan, placed=False)
         shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
                                       spread=self._spread(state), sunk_checks=True, cell_prior=plan.cell_prior,
-                                      single_prior=plan.single_prior)
+                                      single_prior=plan.single_prior,
+                                      single_per_quadrant=plan.single_per_quadrant)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]

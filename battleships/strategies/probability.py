@@ -42,7 +42,7 @@ HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
 class ProbabilityStrategy(Strategy):
     def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0,
                  spread: float = 0.0, sunk_checks: bool = False, endgame_ships: int = ENDGAME_SHIPS,
-                 cell_prior: tuple[float, ...] | None = None, single_prior: tuple[float, ...] | None = None, **kwargs):
+                 cell_prior: tuple[float, ...] | None = None, single_prior: tuple[float, ...] | None = None, single_per_quadrant: bool = False, **kwargs):
         super().__init__(rules, rng, **kwargs)
         # «Шрёдингер»: тратить ли DISTANCE на вопрос «потоплен ли корабль» по подбитой клетке.
         self.sunk_checks = sunk_checks
@@ -57,6 +57,8 @@ class ProbabilityStrategy(Strategy):
         # Вес каждой клетки поля: положение корабля весит как произведение весов его клеток.
         self.cell_prior = cell_prior
         self.single_prior = single_prior  # вес каждой клетки поля для однопалубных; сильнее поправки на края
+        # «Спидран»: платформа ставит ровно по одному однопалубному в каждую четверть поля.
+        self.single_per_quadrant = single_per_quadrant
         self._cell_priors: dict[int, list[float]] = {}
         self.size = rules.rows * rules.columns
         self.side, self.diagonal = neighbour_masks(rules.rows, rules.columns)
@@ -293,6 +295,8 @@ class ProbabilityStrategy(Strategy):
 
     def _priors(self, length: int):
         if length == 1 and self.single_prior is not None and len(self.single_prior) == self.size:
+            if self.single_per_quadrant:
+                return self._quadrant_priors()
             return [self.single_prior[cells[0]] for _, _, cells in placements(self.rules.rows, self.rules.columns, 1)]
         if self.cell_prior is not None and len(self.cell_prior) == self.size:
             if length not in self._cell_priors:
@@ -303,6 +307,27 @@ class ProbabilityStrategy(Strategy):
         if bias is None:
             return None
         return placement_priors(self.rules.rows, self.rules.columns, length, bias.edge, bias.corner, bias.single_edge)
+
+    def _quadrant_priors(self) -> list[float]:
+        """Вес клетки для однопалубного, когда в каждой четверти поля он ровно один.
+
+        В четверти, где однопалубный уже потоплен, вес нулевой; в остальных — доля клетки среди ещё открытых
+        клеток её четверти, то есть вероятность, что корабль стоит именно в ней.
+        """
+        rows, columns = self.rules.rows, self.rules.columns
+        quadrant = lambda index: (index // columns >= rows // 2, index % columns >= columns // 2)
+        done = {quadrant(index) for index in bits(self.sunk) if not self.side[index] & self.sunk}
+        closed = self.empty | self.hits | self.sunk
+        totals: dict[tuple[bool, bool], float] = {}
+        for index in range(self.size):
+            if not closed >> index & 1:
+                totals[quadrant(index)] = totals.get(quadrant(index), 0.0) + self.single_prior[index]
+        weights = []
+        for _, _, cells in placements(rows, columns, 1):
+            index = cells[0]
+            total = totals.get(quadrant(index), 0.0)
+            weights.append(0.0 if quadrant(index) in done or not total else self.single_prior[index] / total)
+        return weights
 
     def _group(self, index: int) -> int:
         """Связная по стороне группа подбитых клеток, в которую входит клетка."""

@@ -39,6 +39,14 @@ SPEEDRUN_SINGLES = (
       0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
 )
 SPEEDRUN_SINGLES_SMOOTHING = 0.1  # запас на случай, если платформа расставляет не совсем как HARD
+# Во всех 1426 расстановках «Спидрана» из реплеев однопалубных ровно по одному в каждой четверти поля
+# (строки и столбцы 1–4 и 5–8), на краю их нет. Так их и ищут лидеры режима: 19–22 выстрела внутрь поля
+# против наших 26. Вес клетки внутри четверти — по расстоянию до двух ближних краёв поля, доли в процентах.
+_QUADRANT_SHARE = {(1, 1): 1.1, (1, 2): 2.95, (1, 3): 2.3, (1, 4): 2.25, (2, 2): 10.8, (2, 3): 11.0,
+                   (2, 4): 8.7, (3, 3): 10.8, (3, 4): 8.05, (4, 4): 6.7}
+SPEEDRUN_QUADRANT_PRIOR = tuple(
+    _QUADRANT_SHARE.get(tuple(sorted((min(row, 9 - row), min(column, 9 - column)))), 0.0)
+    for row in range(10) for column in range(10))
 # «Голодные игры»: у бота с любимыми местами бьём туда, где его флот стоял в последних партиях. На реплеях
 # при разбросе от 0,095 это 8,1 попадания за 20 выстрелов вместо 6,5; у случайной расстановки — шум и минус.
 FLEET_SPREAD = 0.095
@@ -61,6 +69,7 @@ class Plan:
     reason: str
     cell_prior: tuple[float, ...] | None = None  # вес каждой клетки поля в стрельбе: где соперник ставит флот
     single_prior: tuple[float, ...] | None = None  # то же, но только для однопалубных
+    single_per_quadrant: bool = False  # в каждой четверти поля ровно один однопалубный («Спидран»)
 
 
 def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_early: dict | None = None) -> Plan:
@@ -110,8 +119,7 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
     if modifier == "SPEEDRUN":  # флот расставляет платформа, так же, как HARD
         bias = HARD_BIAS
         reasons.append("в «Спидране» флот стоит как у HARD")
-        single_prior = tuple((share / 10000 + SPEEDRUN_SINGLES_SMOOTHING / 100) * 100 / (1 + SPEEDRUN_SINGLES_SMOOTHING)
-                             for share in SPEEDRUN_SINGLES)
+        single_prior = SPEEDRUN_QUADRANT_PRIOR
 
     # Расстановку подстраиваем только под встроенных ботов: они не меняются. Боты команд видят
     # наши реплеи и подстраиваются сами: в «Трёх мушкетёрах» флот по краям проиграл 9 партий из 10
@@ -159,7 +167,7 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
             reasons.append(f"флот спрятан от первых выстрелов {origin}")
 
     return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно", cell_prior,
-                single_prior)
+                single_prior, modifier == "SPEEDRUN")
 
 
 class ProfileBook:
