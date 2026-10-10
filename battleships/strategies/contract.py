@@ -107,20 +107,55 @@ class ProbabilityBot:
 
 
 class ProbabilityBonusBot(ProbabilityBot):
-    """ProbabilityBot, который в концовке тратит бонус DISTANCE.
+    """ProbabilityBot, который тратит бонусы: DISTANCE в концовке и MINE в «Трёх мушкетёрах».
 
     Запуск: --strategy battleships.strategies.contract:ProbabilityBonusBot --allow-bonuses,
-    боту в «Кабинете команды» должны быть выставлены использования DISTANCE.
+    боту в «Кабинете команды» должны быть выставлены использования DISTANCE и MINE.
     Без флага --allow-bonuses оболочка отклонит бонус и подставит запасной выстрел.
     """
 
     max_distance_queries = 2  # третий запрос даёт 2–4 п. п. к победе и окупается только при K = 40
+    # Сработавшая мина сжигает сопернику остаток хода и весь следующий. В «Трёх мушкетёрах» это около
+    # четырёх промахов (+14 п. п. к победе) за 1 очко; в остальных режимах — один выстрел, в минус.
+    mine_modifiers = frozenset({"THREE_MUSKETEERS"})
+    max_mines = 3
     safe_lead = 0.55  # цела большая доля нашего флота — партия и так выиграна, рейтинг не тратим
 
     def __init__(self):
         super().__init__()
         for length in (1, 2, 3, 4):  # таблицы расстояний считаются десятки миллисекунд — не в свой ход
             placement_distances(10, 10, length)
+
+    def choose_action(self, state: model.GameState, time_budget_ms: int) -> model.Action:
+        mine = self._mine_cell(state)
+        if mine is not None:
+            return model.Action("USE_BONUS", cell=mine, bonus="MINE")
+        return super().choose_action(state, time_budget_ms)
+
+    def _mine_cell(self, state: model.GameState) -> model.Cell | None:
+        """Клетка для очередной мины или None. Мины ставятся в первые же ходы: чем раньше, тем вероятнее сработают."""
+        rules = state.rules
+        if rules.modifier not in self.mine_modifiers or not state.ships or state.bonuses.get("MINE", 0) <= 0:
+            return None
+        sprung = sum(result == "MINE" for _, result in state.opponent_shots)
+        if len(state.mines) + sprung >= self.max_mines or state.shots_left <= 5:
+            return None
+        own = {cell for ship in state.ships for cell in ship}
+        # Рядом с кораблём мину не ставим: после потопления соперник в такие клетки не стреляет.
+        near = {model.Cell(c.row + dr, c.column + dc) for c in own for dr in (-1, 0, 1) for dc in (-1, 0, 1)}
+        shot = {cell for cell, _ in state.opponent_shots}
+        free = [cell for cell in rules.cells() if cell not in near and cell not in shot and cell not in state.mines]
+        if not free:
+            return None
+        profile = self.book.lookup(state.opponent_info) or {}
+        heat = profile.get("openingCells") or {}
+
+        def score(cell: model.Cell) -> tuple:
+            # Сначала — куда этот соперник бьёт в дебюте; если данных нет — ближе к центру, где охотятся чаще.
+            centre = min(cell.row, rules.rows - 1 - cell.row) + min(cell.column, rules.columns - 1 - cell.column)
+            return heat.get(f"{cell.row},{cell.column}", 0), centre, self.rng.random()
+
+        return max(free, key=score)
 
     def _distance_budget(self, state: model.GameState, used: int) -> int:
         if state.shots_left <= 1:  # запрос списывает выстрел из лимита: последний оставляем на выстрел

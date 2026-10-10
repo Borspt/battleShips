@@ -56,19 +56,20 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None) -> Plan:
         bias = HARD_BIAS
         reasons.append("в «Спидране» флот стоит как у HARD")
 
-    # Расстановка внутри поля проигрывает стрелку от центра 6 выстрелов, поэтому ставим её, только
-    # если соперник начинает с краёв именно против ботов команд. Стрельба от краёв против HARD
-    # ничего не значит: так выгодно бить по его флоту.
-    if versus_bots.get("matches", 0) >= MIN_MATCHES and (versus_bots.get("openingOnBorder") or 0.0) >= 0.85:
-        placement = interior_placement
-        reasons.append(f"против ботов команд начинает стрельбу с краёв ({versus_bots['openingOnBorder']:.0%})")
-    elif profile and profile.get("matches", 0) >= MIN_MATCHES and (profile.get("openingOnBorder") or 1.0) <= 0.25:
-        if versus_bots.get("matches", 0) < MIN_MATCHES or (versus_bots.get("openingOnBorder") or 0.0) <= 0.25:
+    # Расстановку подстраиваем только под встроенных ботов: они не меняются. Боты команд видят
+    # наши реплеи и подстраиваются сами: в «Трёх мушкетёрах» флот по краям проиграл 9 партий из 10
+    # ботам, которые по профилю «стреляли от центра», а против нас начали бить только в края.
+    # Против них расстановка всегда случайная — её нельзя выучить.
+    if getattr(opponent, "built_in_bot", None):
+        if profile and profile.get("matches", 0) >= MIN_MATCHES and (profile.get("openingOnBorder") or 1.0) <= 0.25:
             placement = edge_placement
             reasons.append(f"начинает стрельбу от центра ({profile['openingOnBorder']:.0%} дебютных выстрелов у края)")
-    elif not profile and getattr(opponent, "built_in_bot", None) == "HARD":
-        placement = edge_placement
-        reasons.append("встроенный HARD стреляет от центра")
+        elif profile and profile.get("matches", 0) >= MIN_MATCHES and (profile.get("openingOnBorder") or 0.0) >= 0.85:
+            placement = interior_placement
+            reasons.append(f"начинает стрельбу с краёв ({profile['openingOnBorder']:.0%})")
+        elif not profile and opponent.built_in_bot == "HARD":
+            placement = edge_placement
+            reasons.append("встроенный HARD стреляет от центра")
 
     return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно")
 
