@@ -3,6 +3,8 @@ import json
 import tempfile
 import time
 import unittest
+from unittest import mock
+import os
 from pathlib import Path
 
 from websockets.asyncio.server import serve
@@ -140,6 +142,18 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_message_and_betting_are_ignored(self):
         await self.client.handle({"type": "FUTURE_MESSAGE", "data": 5})
         await self.client.handle({"type": "BET_REQUESTED", "maxAmount": 40})
+        self.assertEqual(self.sent, [])
+
+    async def test_bet_is_placed_only_when_enabled_and_offered(self):
+        offer = {"type": "BET_REQUESTED", "modifiers": ["DUEL", "SPEEDRUN"], "maxAmount": 40.0, "betWindowSeconds": 5}
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "SPEEDRUN:2"}):
+            await self.client.handle(offer)
+            self.assertEqual(self.sent, [{"type": "PLACE_BET", "modifier": "SPEEDRUN", "amount": 2.0}])
+            self.sent.clear()
+            await self.client.handle(dict(offer, modifiers=["DUEL"]))        # нужного режима нет в списке
+            await self.client.handle(dict(offer, maxAmount=1.0))             # ставка больше разрешённой
+        with mock.patch.dict(os.environ, {"BATTLESHIPS_BET": "SPEEDRUN:много"}):
+            await self.client.handle(offer)
         self.assertEqual(self.sent, [])
 
     async def test_late_action_is_not_sent(self):
