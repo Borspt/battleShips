@@ -178,6 +178,9 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
                     profile["rating"], profile["ratingAt"] = formula["ratingAfter"], match.get("finishedAt")
 
             placed = next((e["ships"] for e in events if e["type"] == "PLACEMENT_ACCEPTED" and e.get("seat") == seat), None)
+            platform_fleet = rules.get("modifier") == "SPEEDRUN"  # флот расставила платформа: о привычках бота он молчит
+            if platform_fleet:
+                placed = None
             if placed:
                 for bucket in buckets:
                     bucket["placements"] += 1
@@ -207,7 +210,7 @@ def build_profiles(store: Path = STORE, own_team: str | None = None) -> dict[str
                 profile["firstShots"][f"{own[0]['cell']['row']},{own[0]['cell']['column']}"] += 1
             if match.get("winner") == seat and match.get("endReason") == "FLEET_DESTROYED" and not rules.get("modifier"):
                 profile["shotsToDestroy"].append(len(own))
-            if opponent["kind"] == "REMOTE_BOT":
+            if opponent["kind"] == "REMOTE_BOT" and not platform_fleet:
                 long_ships = [ship["cells"] for ship in placed or [] if len(ship["cells"]) > 1]
                 singles = [ship["cells"][0] for ship in placed or [] if len(ship["cells"]) == 1]
                 history.setdefault(_key(side), []).append({
