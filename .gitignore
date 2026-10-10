@@ -219,3 +219,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local bot credentials, match logs and strategy state
+.env.*
+!.env.example
+logs/
+runtime/
