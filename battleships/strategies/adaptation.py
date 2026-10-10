@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
@@ -94,6 +95,12 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
         if candidate.get("placements", 0) >= minimum:
             habits, source = candidate, label
             break
+    # BATTLESHIPS_FRESH_PROFILE=1: «последние партии с нами» могут быть на часы старше «последних
+    # партий» (с соперником давно не играли) — тогда берём более свежий раздел.
+    if habits is not None and source == "в последних партиях с нами" and os.environ.get("BATTLESHIPS_FRESH_PROFILE") == "1":
+        newer = (profile or {}).get("recent") or {}
+        if newer.get("placements", 0) >= MIN_PLACEMENTS and str(newer.get("since", "")) > str(habits.get("since", "")):
+            habits, source = newer, "в последних партиях"
     if habits:
         share = habits.get("longShipsOnBorder") or 0.0
         if share >= 0.9:
