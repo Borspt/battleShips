@@ -36,8 +36,12 @@ HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
 
 
 class ProbabilityStrategy(Strategy):
-    def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0, **kwargs):
+    def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0,
+                 spread: float = 0.0, **kwargs):
         super().__init__(rules, rng, **kwargs)
+        # Против чужих мин: в поиске бьём не строго в лучшую клетку, а в случайную из почти лучших
+        # (вес не меньше 1 - spread от максимума), чтобы следующий выстрел нельзя было предсказать.
+        self.spread = spread
         self.distance_uses = distance_uses  # сколько запросов DISTANCE можно потратить
         self.distances: list[tuple[int, int]] = []  # ответы DISTANCE: (индекс клетки, расстояние)
         self.edge_bias = edge_bias
@@ -57,7 +61,8 @@ class ProbabilityStrategy(Strategy):
         weights = self._endgame_weights(self._endgame_configs()) or self._weights()
         best = max(weights)
         if best > 0:
-            choices = [index for index, weight in enumerate(weights) if weight == best]
+            floor = best * (1 - self.spread) if self.spread and not self.hits else best
+            choices = [index for index, weight in enumerate(weights) if weight >= floor]
         else:  # знания противоречат правилам — стреляем в любую необстрелянную клетку
             choices = list(bits(open_cells)) or [0]
         return to_cell(self.rng.choice(choices), self.rules.columns)

@@ -68,6 +68,16 @@ class ScoutingTest(unittest.TestCase):
         self.assertEqual((hard["vsBots"]["matches"], hard["vsBots"]["openingOnBorder"]), (2, 0.0))
         self.assertEqual((profiles["bot:bot-a"]["vsBots"]["matches"], profiles["bot:bot-a"]["vsBots"]["openingOnBorder"]), (0, None))
 
+    def test_recent_window_covers_latest_games_against_team_bots(self):
+        """HARD в заготовке играет только с ботом команды Kraken: обе его партии попадают в окно."""
+        hard = build_profiles(self.store, own_team="Kraken")["builtin:HARD"]
+        self.assertEqual((hard["recent"]["matches"], hard["recent"]["placements"]), (2, 2))
+        self.assertEqual(hard["recent"]["shotCells"], {"5,4": 1.0})
+        self.assertEqual(hard["recent"]["longShipsOnBorder"], 0.0)
+        self.assertEqual(hard["recentVsUs"]["matches"], 2)
+        squid = build_profiles(self.store)["bot:bot-a"]   # играл только со встроенным ботом
+        self.assertEqual((squid["recent"]["matches"], squid["recent"]["shotCells"], squid["recentVsUs"]["matches"]), (0, {}, 0))
+
     def test_leaderboard_gives_latest_rating_and_unseen_bots(self):
         snapshot = {"fetchedAt": "2026-10-10T11:00:00+00:00", "bots": [
             {"botId": "bot-a", "teamName": "Kraken", "botName": "Squid 2", "rating": 1620.0, "rankingMatchCount": 7},

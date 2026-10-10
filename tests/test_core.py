@@ -171,6 +171,17 @@ class ShootingTest(unittest.TestCase):
             self.assertTrue(all(g.destroyed and g.queries <= uses and g.shots + g.queries <= rules.shot_limit for g in games))
         self.assertLess(mean[2], mean[0] - 3)
 
+    def test_spread_makes_hunting_shots_unpredictable_but_not_finishing_shots(self):
+        opening = lambda spread: {ProbabilityStrategy(Rules(), random.Random(seed), spread=spread).next_shot() for seed in range(60)}
+        self.assertLessEqual(len(opening(0.0)), 16)    # без разброса — только 16 лучших клеток в центре
+        self.assertGreater(len(opening(0.15)), 20)
+        finishing = set()
+        for seed in range(30):
+            shooter = ProbabilityStrategy(Rules(), random.Random(seed), spread=0.15)
+            shooter.on_shot_result((5, 5), "HIT")
+            finishing.add(shooter.next_shot())
+        self.assertLessEqual(finishing, {(4, 5), (6, 5), (5, 4), (5, 6)})
+
     def test_defended_cell_is_shot_again(self):
         shooter = ProbabilityStrategy(Rules(), random.Random(1))
         shooter.on_shot_result((4, 4), "DEFENDED")

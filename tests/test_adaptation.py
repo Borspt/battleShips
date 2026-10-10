@@ -35,12 +35,32 @@ class ChoosePlanTest(unittest.TestCase):
         self.assertEqual((plan.placement, plan.edge_bias), (random_placement, None))
 
     def test_bias_grows_with_share_of_ships_on_border(self):
-        self.assertEqual(choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.7, singlesOnBorderShare=0.2))).edge_bias, MEDIUM_BIAS)
-        self.assertEqual(choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=1.0, singlesOnBorderShare=0.0))).edge_bias, HARD_BIAS)
+        medium = choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.7))).edge_bias
+        strong = choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=1.0))).edge_bias
+        self.assertEqual((medium.edge, medium.corner), (MEDIUM_BIAS.edge, MEDIUM_BIAS.corner))
+        self.assertEqual((strong.edge, strong.corner), (HARD_BIAS.edge, HARD_BIAS.corner))
+        self.assertIsNone(choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.4))).edge_bias)
+        self.assertIsNotNone(choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.5))).edge_bias)
 
-    def test_singles_are_not_pushed_inside_when_opponent_keeps_them_on_border(self):
-        plan = choose_plan(None, REMOTE, profile(vsBots=versus_bots(longShipsOnBorder=0.7, singlesOnBorderShare=0.5)))
-        self.assertEqual(plan.edge_bias.single_edge, 1.0)
+    def test_singles_weight_follows_where_opponent_keeps_them(self):
+        weight = lambda share: choose_plan(None, REMOTE, profile(vsBots=versus_bots(
+            longShipsOnBorder=0.7, singlesOnBorderShare=share))).edge_bias.single_edge
+        self.assertEqual(weight(0.36), 1.0)      # как при случайной расстановке
+        self.assertLess(weight(0.1), 1.0)        # однопалубные внутри поля
+        self.assertGreater(weight(0.7), 3.0)     # однопалубные у края
+        self.assertEqual(weight(0.99), 4.0)      # вес ограничен
+
+    def test_recent_games_override_whole_day_and_games_with_us_override_both(self):
+        day = versus_bots(longShipsOnBorder=0.31)
+        recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.5}
+        with_us = {"matches": 6, "placements": 6, "longShipsOnBorder": 0.2, "singlesOnBorderShare": 0.3}
+        self.assertIsNone(choose_plan(None, REMOTE, profile(vsBots=day)).edge_bias)
+        plan = choose_plan(None, REMOTE, profile(vsBots=day, recent=recent))
+        self.assertIsNotNone(plan.edge_bias)
+        self.assertIn("в последних партиях", plan.reason)
+        self.assertIsNone(choose_plan(None, REMOTE, profile(vsBots=day, recent=recent, recentVsUs=with_us)).edge_bias)
+        few = dict(with_us, placements=2)
+        self.assertIsNotNone(choose_plan(None, REMOTE, profile(vsBots=day, recent=recent, recentVsUs=few)).edge_bias)
 
     def test_fleet_on_border_seen_only_against_built_in_bots_gives_no_bias(self):
         self.assertIsNone(choose_plan(None, REMOTE, profile(longShipsOnBorder=1.0)).edge_bias)

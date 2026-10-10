@@ -35,6 +35,7 @@ def core_rules(rules: model.Rules) -> Rules:
 
 # Какой план выбран в каждой партии; читает python -m battleships.scouting --plans.
 PLAN_LOG = Path(os.environ.get("BATTLESHIPS_PLAN_LOG", "logs/plans.jsonl"))
+MINE_SPREAD = 0.15  # против чужих мин: выстрел — случайный из клеток с весом от 85% лучшего
 
 
 class ProbabilityBot:
@@ -64,7 +65,8 @@ class ProbabilityBot:
         plan = self.plan(state)
         if state.ships is None and not state.shots:  # «Спидран»: расстановки нет, партия начинается с выстрела
             self._record(state, plan, placed=False)
-        shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias)
+        shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias,
+                                      spread=self._spread(state))
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         answers = [r for r in state.bonus_results if r.get("bonus") == "DISTANCE" and r.get("distance") is not None]
@@ -80,6 +82,13 @@ class ProbabilityBot:
     def _distance_budget(self, state: model.GameState, used: int) -> int:
         """Сколько запросов DISTANCE стратегия вправе потратить сейчас. Базовый бот бонусы не тратит."""
         return 0
+
+    @staticmethod
+    def _spread(state: model.GameState) -> float:
+        """Пока у соперника есть мины, на которые мы ещё не наступили, не даём предсказать наш выстрел."""
+        mines = sum(b.get("uses", 0) for b in (state.opponent or {}).get("bonuses") or [] if b.get("bonus") == "MINE")
+        stepped = sum(result == "MINE" for _, result in state.shots)
+        return MINE_SPREAD if mines > stepped else 0.0
 
     def _place(self, rules: model.Rules, placement) -> list[list[model.Cell]]:
         ships = placement(core_rules(rules), self.rng)
@@ -119,6 +128,14 @@ class ProbabilityBonusBot(ProbabilityBot):
     # четырёх промахов (+14 п. п. к победе) за 1 очко; в остальных режимах — один выстрел, в минус.
     mine_modifiers = frozenset({"THREE_MUSKETEERS"})
     max_mines = 3
+    # Мина стоит 1 очко и окупается, если сработает чаще чем в 35% партий. Половина мин «в дебютную
+    # клетку соперника» не срабатывала, поэтому ставим только туда, куда этот соперник стрелял
+    # в большинстве своих последних партий.
+    mine_min_frequency = 0.7
+    mine_min_matches = 8
+    # Соперник намного слабее нас: победа и так почти ничего не даёт, бонусы на него не тратим.
+    own_name = os.environ.get("BATTLESHIPS_BOT_NAME", "Нагибатор228")
+    weak_gap = 150
     safe_lead = 0.55  # цела большая доля нашего флота — партия и так выиграна, рейтинг не тратим
 
     def __init__(self):
@@ -132,33 +149,38 @@ class ProbabilityBonusBot(ProbabilityBot):
             return model.Action("USE_BONUS", cell=mine, bonus="MINE")
         return super().choose_action(state, time_budget_ms)
 
+    def _weak_opponent(self, state: model.GameState) -> bool:
+        rating, own = state.opponent_info.rating, self.book.rating_of(self.own_name)
+        return rating is not None and own is not None and own - rating >= self.weak_gap
+
     def _mine_cell(self, state: model.GameState) -> model.Cell | None:
         """Клетка для очередной мины или None. Мины ставятся в первые же ходы: чем раньше, тем вероятнее сработают."""
         rules = state.rules
         if rules.modifier not in self.mine_modifiers or not state.ships or state.bonuses.get("MINE", 0) <= 0:
             return None
         sprung = sum(result == "MINE" for _, result in state.opponent_shots)
-        if len(state.mines) + sprung >= self.max_mines or state.shots_left <= 5:
+        if len(state.mines) + sprung >= self.max_mines or state.shots_left <= 5 or self._weak_opponent(state):
+            return None
+        profile = self.book.lookup(state.opponent_info) or {}
+        habits = next((profile[section] for section in ("recentVsUs", "recent")
+                       if (profile.get(section) or {}).get("matches", 0) >= self.mine_min_matches), None)
+        if not habits:
             return None
         own = {cell for ship in state.ships for cell in ship}
         # Рядом с кораблём мину не ставим: после потопления соперник в такие клетки не стреляет.
         near = {model.Cell(c.row + dr, c.column + dc) for c in own for dr in (-1, 0, 1) for dc in (-1, 0, 1)}
         shot = {cell for cell, _ in state.opponent_shots}
-        free = [cell for cell in rules.cells() if cell not in near and cell not in shot and cell not in state.mines]
+        frequency = habits.get("shotCells") or {}
+        free = [cell for cell in rules.cells() if cell not in near and cell not in shot and cell not in state.mines
+                and frequency.get(f"{cell.row},{cell.column}", 0) >= self.mine_min_frequency]
         if not free:
             return None
-        profile = self.book.lookup(state.opponent_info) or {}
-        heat = profile.get("openingCells") or {}
-
-        def score(cell: model.Cell) -> tuple:
-            # Сначала — куда этот соперник бьёт в дебюте; если данных нет — ближе к центру, где охотятся чаще.
-            centre = min(cell.row, rules.rows - 1 - cell.row) + min(cell.column, rules.columns - 1 - cell.column)
-            return heat.get(f"{cell.row},{cell.column}", 0), centre, self.rng.random()
-
-        return max(free, key=score)
+        return max(free, key=lambda cell: (frequency[f"{cell.row},{cell.column}"], self.rng.random()))
 
     def _distance_budget(self, state: model.GameState, used: int) -> int:
         if state.shots_left <= 1:  # запрос списывает выстрел из лимита: последний оставляем на выстрел
+            return 0
+        if self._weak_opponent(state):
             return 0
         if state.ships and state.rules.modifier != "BIRD_BOX":
             fleet = sum(len(ship) for ship in state.ships)
