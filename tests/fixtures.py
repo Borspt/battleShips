@@ -1,5 +1,22 @@
 import time
 from battleships.strategy import BaselineStrategy
+from battleships.model import Action, Cell
+
+
+class ContextStrategy(BaselineStrategy):
+    def place_ships_for_match(self, state):
+        assert state.opponent_info.rating == 1642.375
+        assert state.opponent_info.bot_id == "3f2b8c1e-6a4d-4f0b-9c5e-2d7a1b8e4c90"
+        # A deterministic valid fleet proves the optional hook was actually used.
+        return [[Cell(0, c) for c in range(4)], [Cell(2, c) for c in range(3)],
+                [Cell(4, c) for c in range(3)], [Cell(6, c) for c in range(2)],
+                [Cell(8, c) for c in range(2)], [Cell(0, c) for c in range(6, 8)],
+                [Cell(3, 9)], [Cell(5, 9)], [Cell(7, 9)], [Cell(9, 9)]]
+
+    def choose_action(self, state, time_budget_ms):
+        assert state.opponent_info.rating == 1642.375
+        assert state.opponent_info.key == "bot:3f2b8c1e-6a4d-4f0b-9c5e-2d7a1b8e4c90"
+        return Action.shoot(Cell(4, 5))
 
 
 class SlowStrategy(BaselineStrategy):

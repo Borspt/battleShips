@@ -92,6 +92,27 @@ class Action:
         return value
 
 
+@dataclass(frozen=True)
+class OpponentInfo:
+    """Identity and observed Elo; None means unavailable, never an assumed 1500."""
+    key: str | None = None
+    bot_id: str | None = None
+    built_in_bot: str | None = None
+    rating: float | None = None
+    rating_source: str | None = None
+    rating_observed_at: str | None = None
+
+    @classmethod
+    def from_wire(cls, opponent: dict) -> "OpponentInfo":
+        bot_id = opponent.get("botId")
+        level = opponent.get("builtInBot")
+        if opponent.get("kind") == "REMOTE_BOT" and isinstance(bot_id, str) and bot_id:
+            return cls(key=f"bot:{bot_id}", bot_id=bot_id)
+        if opponent.get("kind") == "BUILT_IN_BOT" and level in {"EASY", "MEDIUM", "HARD"}:
+            return cls(key=f"builtin:{level}", built_in_bot=level)
+        return cls()
+
+
 @dataclass
 class GameState:
     rules: Rules
@@ -108,11 +129,13 @@ class GameState:
     shots_left: int = 0
     shots_left_in_turn: int = 0
     finished: bool = False
+    opponent_info: OpponentInfo = field(default_factory=OpponentInfo)
 
     @classmethod
     def from_message(cls, msg: dict) -> "GameState":
         rules = Rules.parse(msg["rules"])
-        state = cls(rules, opponent=msg.get("opponent", {}))
+        opponent = msg.get("opponent") or {}
+        state = cls(rules, opponent=dict(opponent), opponent_info=OpponentInfo.from_wire(opponent))
         state.bonuses = {x["bonus"]: x["uses"] for x in msg.get("bonuses", [])}
         state.shots_left = msg.get("shotsLeft", rules.shot_limit_per_player)
         state.shots_left_in_turn = rules.shots_per_turn
