@@ -136,7 +136,9 @@ class ProbabilityBonusBot(ProbabilityBot):
     # Соперник намного слабее нас: победа и так почти ничего не даёт, бонусы на него не тратим.
     own_name = os.environ.get("BATTLESHIPS_BOT_NAME", "Нагибатор228")
     weak_gap = 150
-    safe_lead = 0.55  # цела большая доля нашего флота — партия и так выиграна, рейтинг не тратим
+    # Мы впереди на столько попаданий — партия и так выиграна, рейтинг не тратим. Мерить потерями своего
+    # флота нельзя: быстрый соперник топил нас раньше, чем порог срабатывал, а в выигранных партиях мы платили.
+    safe_lead = 6
 
     def __init__(self):
         super().__init__()
@@ -183,9 +185,9 @@ class ProbabilityBonusBot(ProbabilityBot):
         if self._weak_opponent(state):
             return 0
         if state.ships and state.rules.modifier != "BIRD_BOX":
-            fleet = sum(len(ship) for ship in state.ships)
+            scored = len({cell for cell, result in state.shots if result in ("HIT", "SUNK")})
             lost = len({cell for cell, result in state.opponent_shots if result in ("HIT", "SUNK")})
-            if fleet and (fleet - lost) / fleet > self.safe_lead:
+            if scored - lost >= self.safe_lead:
                 return 0
         # В «Шрёдингере» запрос отвечает, потоплен ли корабль, и стоит своей цены все три раза.
         limit = 3 if state.rules.modifier == "SCHRODINGER_SHIP" else self.max_distance_queries
