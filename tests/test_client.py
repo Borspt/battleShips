@@ -27,6 +27,8 @@ class FakeWorker:
     async def call(self, method, args, timeout):
         if method == "place_ships":
             return BaselineStrategy().place_ships(args[0])
+        if method == "place_ships_for_match":
+            return BaselineStrategy().place_ships(args[0].rules)
         return self.action
 
 

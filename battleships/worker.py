@@ -13,7 +13,11 @@ def _run(connection, strategy_path: str):
         while True:
             method, args = connection.recv()
             try:
-                connection.send((True, getattr(strategy, method)(*args)))
+                if method == "place_ships_for_match" and not hasattr(strategy, method):
+                    result = strategy.place_ships(args[0].rules)
+                else:
+                    result = getattr(strategy, method)(*args)
+                connection.send((True, result))
             except Exception as exc:
                 connection.send((False, type(exc).__name__))
     except (EOFError, BrokenPipeError, OSError):
