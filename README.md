@@ -3,6 +3,16 @@
 Клиент команды для [турнирной платформы](https://hackathon.no-offence.ru/).
 Python 3.12+, WebSocket + JSON. Общая программа, отдельный процесс и токен для каждого бота.
 
+## Стратегии наших ботов
+
+| Бот | Вариант |
+|---|---|
+| Нагибатор228 (Борис) | `battleships.strategies.contract:ProbabilityBot`: карта вероятностей и адаптация под соперника |
+| Хаки Наблюдения (Музроб) | `battleships.strategies.haki:HakiObservationBot`: та же основа, отдельный совместный расчёт оставшихся однопалубных |
+
+[Назначение, отличия, команды запуска и учёт результатов](DOCUMENTS/BOTS.md).
+Для Музроба подготовлен `scripts/run-haki.ps1`; обновление Git само по себе бота не запускает.
+
 ## Данные соперника
 
 Оболочка передаёт стратегии `state.opponent_info`: ID бота, ключ для статистики,
@@ -90,7 +100,7 @@ Copy-Item .env.example .env
 Контракт описан в [docs/strategy-contract.md](docs/strategy-contract.md).
 
 ```powershell
-.\.venv\Scripts\python.exe -m battleships --strategy strategy.boris:BorisStrategy
+.\.venv\Scripts\python.exe -m battleships --strategy battleships.strategies.contract:ProbabilityBot
 ```
 
 Класс без обязательных аргументов конструктора реализует:
@@ -100,7 +110,7 @@ def place_ships(self, rules: Rules) -> list[list[Cell]]: ...
 def choose_action(self, state: GameState, time_budget_ms: int) -> Action: ...
 ```
 
-Путь `strategy.boris:BorisStrategy` — пример: соответствующий модуль должна добавить команда.
+Для «Хаки Наблюдения» используйте отдельный путь из таблицы выше.
 По умолчанию используется существующий `battleships.strategy:BaselineStrategy`.
 
 ## Зоны ответственности
