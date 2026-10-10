@@ -41,10 +41,11 @@ HARD_BIAS = EdgeBias(edge=4.0, corner=12.0, single_edge=0.5)
 
 class ProbabilityStrategy(Strategy):
     def __init__(self, rules, rng=None, edge_bias: EdgeBias | None = None, distance_uses: int = 0,
-                 spread: float = 0.0, sunk_checks: bool = False, **kwargs):
+                 spread: float = 0.0, sunk_checks: bool = False, endgame_ships: int = ENDGAME_SHIPS, **kwargs):
         super().__init__(rules, rng, **kwargs)
         # «Шрёдингер»: тратить ли DISTANCE на вопрос «потоплен ли корабль» по подбитой клетке.
         self.sunk_checks = sunk_checks
+        self.endgame_ships = endgame_ships  # со скольких оставшихся кораблей перебираем расстановки
         # Против чужих мин: в поиске бьём не строго в лучшую клетку, а в случайную из почти лучших
         # (вес не меньше 1 - spread от максимума), чтобы следующий выстрел нельзя было предсказать.
         self.spread = spread
@@ -206,7 +207,7 @@ class ProbabilityStrategy(Strategy):
 
         None — кораблей ещё много, перебор слишком велик или знания противоречивы.
         """
-        if not self.remaining or len(self.remaining) > ENDGAME_SHIPS:
+        if not self.remaining or len(self.remaining) > self.endgame_ships:
             return None
         rows, columns = self.rules.rows, self.rules.columns
         blocked, hits, touching = self.empty | self.sunk, self.hits, not self.rules.no_touching
