@@ -1,0 +1,572 @@
+{
+  "hypothesis": "Hunt maximum-score ties prefer more unknown diagonal cells; only >4 ships and no hits.",
+  "baseline": "a25096c",
+  "mode": "SCHRODINGER_SHIP",
+  "seedsPerFleet": 5,
+  "limitations": "Historical pre-Schrodinger real fleets, holdout previously examined for other hypotheses; frozen priors; no bonus, mine, shield, turn timing or Elo; exact singleton time search equally disabled.",
+  "development": {
+    "fleets": 32,
+    "baselineShots": 60.99375,
+    "candidateShots": 61.23125,
+    "meanShotsSaved": -0.2375000000000007,
+    "lowerApprox95": -0.8994710304547257
+  },
+  "developmentRows": [
+    {
+      "matchId": "d4580431-17ca-4e54-9e25-67f83a0db147",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:24:52.050007Z",
+      "HakiEndgameStrategy": {
+        "shots": 51,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 51,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "96cdaadc-5c21-4e67-984e-baa8c4561c97",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:24:57.196696Z",
+      "HakiEndgameStrategy": {
+        "shots": 58.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 58.8,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "b6ee840b-6fc9-4f01-a490-f0ba8d958287",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:24:59.762639Z",
+      "HakiEndgameStrategy": {
+        "shots": 67.4,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 63,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "f108fd55-b297-4f26-9f7e-565dd80ab40a",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:25:05.424323Z",
+      "HakiEndgameStrategy": {
+        "shots": 55.4,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 53.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "75a11784-e98d-4209-8442-e511d135dd1b",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:25:07.472943Z",
+      "HakiEndgameStrategy": {
+        "shots": 52.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 52,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "2c426c79-1fdf-4736-9e61-d4b78949967e",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:25:14.632906Z",
+      "HakiEndgameStrategy": {
+        "shots": 56.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 57,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "8027d4ee-7d32-42e5-b8fb-c78a9e478bf4",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:25:17.197752Z",
+      "HakiEndgameStrategy": {
+        "shots": 63.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 62.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "38137fe9-51af-4c76-a038-f67bae592679",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:25:19.748028Z",
+      "HakiEndgameStrategy": {
+        "shots": 65.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 65.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "3fb6a5d2-b1aa-43f9-b995-76574a797ba8",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:25:21.295358Z",
+      "HakiEndgameStrategy": {
+        "shots": 47,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 49.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "bc87d040-2727-4820-98c9-3c4f819377bc",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:25:27.416653Z",
+      "HakiEndgameStrategy": {
+        "shots": 56,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 56.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "20031407-55b2-4ed6-8d6a-7f24863c996b",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:25:34.572869Z",
+      "HakiEndgameStrategy": {
+        "shots": 65.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 66.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "5bf6d9c3-1dca-442c-8c49-206652f0368a",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:25:36.637093Z",
+      "HakiEndgameStrategy": {
+        "shots": 59.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 62,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "2faf2591-f81f-4ef1-b4f6-cb632c3e3909",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:25:44.34272Z",
+      "HakiEndgameStrategy": {
+        "shots": 60.4,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 59.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "b0d8e8a4-6f5f-40d3-8e2c-4a7ead522d41",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:25:44.34795Z",
+      "HakiEndgameStrategy": {
+        "shots": 71.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 72,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "7d5fe3ac-e75b-46fe-a181-a7a72a1eee26",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:25:52.545227Z",
+      "HakiEndgameStrategy": {
+        "shots": 66.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 66.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "a6d2d37f-e532-4da3-b23c-f74783b46a88",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:25:52.556254Z",
+      "HakiEndgameStrategy": {
+        "shots": 53.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 59.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "23c56b36-9e87-4519-9135-ac2c0b10371f",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:26:01.814677Z",
+      "HakiEndgameStrategy": {
+        "shots": 68,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 67.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "67de5f9f-b5a4-4ccb-b6dd-4b7823b88d58",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:26:05.393279Z",
+      "HakiEndgameStrategy": {
+        "shots": 63.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 64.8,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "875bf776-9c68-4da3-ab23-20ed9d5323eb",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:26:10.035363Z",
+      "HakiEndgameStrategy": {
+        "shots": 66.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 65.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "002982ea-5745-458a-8e29-4da3e0429330",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:26:15.161306Z",
+      "HakiEndgameStrategy": {
+        "shots": 56.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 58.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "52448866-496e-44ea-9155-2c8a0c3f4db2",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:26:22.356204Z",
+      "HakiEndgameStrategy": {
+        "shots": 63.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 65.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "857615c0-4a53-4aa9-abd5-d88c42a6ace6",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:26:24.425734Z",
+      "HakiEndgameStrategy": {
+        "shots": 64.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 67.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "9ff2595f-6c3a-4443-b57f-f54464e6d798",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:26:26.988871Z",
+      "HakiEndgameStrategy": {
+        "shots": 51.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 48.8,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "09ac3551-0722-4956-a517-a0c4ddad89ea",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:26:38.275361Z",
+      "HakiEndgameStrategy": {
+        "shots": 67.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 67.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "9f246e11-e7bd-4248-b216-59a795427c6e",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:26:39.828343Z",
+      "HakiEndgameStrategy": {
+        "shots": 52.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 53.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "88cd3ec0-492b-44b2-a95c-b5f970d172c5",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:26:42.915295Z",
+      "HakiEndgameStrategy": {
+        "shots": 65,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 66,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "38b04530-0d9c-4b92-baa2-a460ee35ae87",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:26:43.439669Z",
+      "HakiEndgameStrategy": {
+        "shots": 57.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 55.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "31b59522-cb8f-41bf-b4b6-542d7b23d162",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:26:52.68337Z",
+      "HakiEndgameStrategy": {
+        "shots": 67.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 68,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "e577b0d4-8d46-4d04-9c0c-726295e7d959",
+      "bot": "Michelangelo",
+      "at": "2026-10-10T12:26:52.690714Z",
+      "HakiEndgameStrategy": {
+        "shots": 67.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 69,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "157c5b67-f3bf-4575-bde7-0acd18824f2d",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:27:01.447212Z",
+      "HakiEndgameStrategy": {
+        "shots": 61.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 63.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "97498763-80d6-45e2-acc4-78acd35bcda2",
+      "bot": "Raphael",
+      "at": "2026-10-10T12:27:03.507427Z",
+      "HakiEndgameStrategy": {
+        "shots": 61.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 61.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "ad6cef01-1d8c-4276-ba9c-ac7067a19e55",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:27:10.666946Z",
+      "HakiEndgameStrategy": {
+        "shots": 65.4,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 64,
+        "completed": 5
+      }
+    }
+  ],
+  "holdout": {
+    "fleets": 10,
+    "baselineShots": 63.68,
+    "candidateShots": 63.82,
+    "meanShotsSaved": -0.14000000000000057,
+    "lowerApprox95": -1.5166949149644193
+  },
+  "holdoutRows": [
+    {
+      "matchId": "2121bc3b-c182-4bd0-840b-5cebeb5954ce",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:56.950164Z",
+      "HakiEndgameStrategy": {
+        "shots": 60.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 64,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "5e19561a-483e-4035-b381-015b38fd1cab",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:24.56973Z",
+      "HakiEndgameStrategy": {
+        "shots": 68.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 68.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "833b182a-e1a2-4928-a1c3-cb108c87b9e7",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:56:29.43122Z",
+      "HakiEndgameStrategy": {
+        "shots": 63.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 63,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "91175bdf-4186-4040-85c3-1cd43f6a82bc",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:09.60081Z",
+      "HakiEndgameStrategy": {
+        "shots": 63.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 60.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "b603f0eb-e4d5-4d6c-afd2-84ba2732a1f8",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:33.332003Z",
+      "HakiEndgameStrategy": {
+        "shots": 65.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 63.4,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "bc3be616-f8f9-4dca-a809-1ccc96f3db4a",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:02.890136Z",
+      "HakiEndgameStrategy": {
+        "shots": 69.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 70.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "bf391da4-8c6c-4c05-aae6-eb535721a242",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:56:11.344188Z",
+      "HakiEndgameStrategy": {
+        "shots": 65.8,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 63.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "dabddd63-680c-487e-913f-d5cbaec7eff5",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:43.663349Z",
+      "HakiEndgameStrategy": {
+        "shots": 57.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 58.6,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "ddcf0419-55c5-453c-aaea-91c86d1a10f2",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:55:16.848243Z",
+      "HakiEndgameStrategy": {
+        "shots": 61.2,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 62.2,
+        "completed": 5
+      }
+    },
+    {
+      "matchId": "ffa6fec9-c027-4054-8352-f432b5286acb",
+      "bot": "Donatello",
+      "at": "2026-10-10T12:56:22.717105Z",
+      "HakiEndgameStrategy": {
+        "shots": 61.6,
+        "completed": 5
+      },
+      "DiagonalTiebreak": {
+        "shots": 64.4,
+        "completed": 5
+      }
+    }
+  ],
+  "recommended": false
+}
