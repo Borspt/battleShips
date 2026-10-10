@@ -24,7 +24,16 @@ def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
-    temporary.replace(path)
+    # Windows can briefly deny replacement while the HTTP reader has the file
+    # open. Preserve the previous complete snapshot and retry the atomic swap.
+    for attempt in range(10):
+        try:
+            temporary.replace(path)
+            break
+        except PermissionError:
+            if attempt == 9:
+                raise
+            time.sleep(.02 * (attempt + 1))
 
 
 def read_json(path, default=None):
@@ -163,7 +172,11 @@ def supervise(repo, series):
                         child.terminate()
                     child.wait(timeout=15)
                 time.sleep(.5)
-            state.update(status='stopped', stopReason='SUPERVISOR_ERROR', stoppedAt=now())
+            # The child may have finished a match while graceful stop was pending.
+            # Recover that final result even when the original failure was a write.
+            state.update(journal_summary(series / 'logs'))
+            state.update(status='stopped', stopReason='SUPERVISOR_ERROR',
+                         exitCode=child.returncode, stoppedAt=now())
         else:
             state.update(status='error', error=type(exc).__name__, stoppedAt=now())
     finally:
