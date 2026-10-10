@@ -340,7 +340,18 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
     delay = 0.5
     controller = None
     directory = OpponentDirectory(url, opponent_ratings_file)
+    rating_gate = None
     try:
+        if session and session.stop_policy == 'RATING_GAIN':
+            import os
+            from .haki_rating import HakiRatingGate
+            rating_gate = HakiRatingGate(directory.base_url, journal,
+                warmup=int(os.environ.get('HAKI_RATING_WARMUP', '3')))
+            try:
+                await rating_gate.start()
+            except (OSError, ValueError, KeyError, TypeError):
+                journal.write('haki_session_stopped', {'reason': 'RATING_UNAVAILABLE'})
+                return
         try:
             await worker.start()
         except Exception as exc:
@@ -374,6 +385,7 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                             journal.write("invalid_platform_json")
                             continue
                         # Transport/send errors must leave this loop and reconnect.
+                        was_active = session.active if session else False
                         if session:
                             session.observe(message)
                         try:
@@ -387,8 +399,14 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                             if session and controller.stop_requested():
                                 journal.write("haki_session_stopped", {"reason": "OPERATOR_STOP", "completed": completed})
                                 return
+                            if rating_gate and was_active:
+                                reason = await rating_gate.after_match()
+                                if reason:
+                                    journal.write('haki_session_stopped', {'reason': reason})
+                                    return
                             if (stop_on_loss and message.get("outcome") == "LOSS"
-                                    and (session is None or session.should_stop)):
+                                    and (session is None or
+                                         (session.stop_policy == 'LOSSES' and session.should_stop))):
                                 details = {"completed": completed, "end_reason": message.get("endReason")}
                                 if session:
                                     details.update(losses=session.losses, loss_limit=session.loss_limit)

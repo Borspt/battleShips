@@ -18,8 +18,11 @@ class HakiSession:
     change_requested: bool = False
     loss_limit: int = field(default_factory=lambda: int(os.environ.get('HAKI_LOSS_LIMIT', '1')))
     losses: int = 0
+    stop_policy: str = field(default_factory=lambda: os.environ.get('HAKI_STOP_POLICY', 'LOSSES'))
 
     def __post_init__(self):
+        if self.stop_policy not in {'LOSSES', 'RATING_GAIN'}:
+            raise ValueError('Unknown Haki stop policy')
         if not 1 <= self.loss_limit <= 10:
             raise ValueError('HAKI_LOSS_LIMIT must be between 1 and 10')
 
@@ -59,7 +62,7 @@ class HakiSession:
             if message.get("outcome") == "LOSS":
                 if was_active:
                     self.losses += 1
-                if self.losses >= self.loss_limit:
+                if self.stop_policy == 'LOSSES' and self.losses >= self.loss_limit:
                     self.stop_reason = "FIRST_LOSS" if self.loss_limit == 1 else "LOSS_LIMIT"
                 elif not self.confirmed:
                     self.stop_reason = self.stop_reason or "MODE_NOT_CONFIRMED"

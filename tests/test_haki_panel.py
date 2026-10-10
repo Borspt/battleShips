@@ -91,7 +91,8 @@ class HakiPanelTests(unittest.TestCase):
             recreated = Manager(directory)
             _, state = recreated.current()
             self.assertEqual(state['commit'], 'abc123')
-            self.assertEqual(state['lossLimit'], 2)
+            self.assertEqual(state['stopPolicy'], 'RATING_GAIN')
+            self.assertEqual(state['warmupMatches'], 3)
             with patch('battleships.haki_panel.haki_processes', return_value=[]):
                 with self.assertRaises(RuntimeError):
                     recreated.action('start')
@@ -116,7 +117,8 @@ class HakiPanelTests(unittest.TestCase):
                  patch('battleships.haki_supervisor.subprocess.Popen', return_value=child) as launch:
                 supervise(directory, series)
                 self.assertEqual(launch.call_count, 1)
-                self.assertEqual(launch.call_args.kwargs['env']['HAKI_LOSS_LIMIT'], '2')
+                self.assertEqual(launch.call_args.kwargs['env']['HAKI_STOP_POLICY'], 'RATING_GAIN')
+                self.assertEqual(launch.call_args.kwargs['env']['HAKI_RATING_WARMUP'], '3')
             self.assertEqual(read_json(series / 'state.json')['status'], 'stopped')
 
     def test_series_counts_total_losses_and_skips_partial_tail(self):
