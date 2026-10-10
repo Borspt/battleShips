@@ -23,16 +23,18 @@
 - **Диана — продукт.** Регламент, приоритеты, внутренние турниры между версиями, разведка
   по логам, питч. Решает, какую версию выкатывать.
 
-Контракт между стратегией и обёрткой — класс `Strategy` в
-`battleships/strategies/base.py`, один экземпляр на партию (с Музробом ещё не согласован):
+Контракт между стратегией и оболочкой задал Музроб: `docs/strategy-contract.md`.
+Оболочка сама хранит состояние партии и при каждом вызове передаёт его целиком, стратегия
+памяти между вызовами не держит:
 
 ```python
-strategy = ProbabilityStrategy(Rules.from_message(match_started["rules"]))
-strategy.place_ships() -> list[list[(row, column)]]   # для PLACE; в «Спидране» не вызывать
-strategy.next_shot() -> (row, column)                 # для SHOOT
-strategy.on_shot_result(cell, result)                 # SHOT_RESOLVED: MISS, HIT, SUNK, DEFENDED, MINE
-strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
+place_ships(rules) -> list[list[Cell]]
+choose_action(state, time_budget_ms) -> Action   # до 150 мс на вызов
 ```
+
+Наша стратегия подключается адаптером `battleships/strategies/contract.py`: он на каждый
+вызов заново собирает знания из `state.shots`. Внутренний интерфейс ядра (`next_shot`,
+`on_shot_result` в `battleships/strategies/base.py`) остаётся для симулятора.
 
 ## Контрольные точки дня
 
@@ -71,7 +73,10 @@ strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
 На 12:50 2026-10-10:
 
 - Готово ядро стратегии и симулятор, пакет `battleships/`, без внешних зависимостей (Python 3.14).
-- Обёртки над WebSocket ещё нет, на платформе бот не играл.
+- Оболочка Музроба (WebSocket, восстановление после обрыва, запасной ход, логи) — в PR №1,
+  ветка `muzrob/integration-core`. Наша стратегия подключена к ней в ветке
+  `boris/probability-strategy`, все тесты обеих частей проходят.
+- На платформе бот ещё не играл.
 - На платформе: бонусы выключены, снижение рейтинга за простой выключено, модификатора нет.
 
 Что где лежит:
@@ -81,6 +86,7 @@ strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
 | `battleships/rules.py` | `Rules`: правила партии, разбор из `MATCH_STARTED` |
 | `battleships/placement.py` | Случайная расстановка и проверка расстановки по правилам платформы |
 | `battleships/strategies/probability.py` | Основная стратегия: карта вероятностей |
+| `battleships/strategies/contract.py` | `ProbabilityBot`: адаптер стратегии под контракт оболочки |
 | `battleships/strategies/baseline.py` | Эталон: случайные выстрелы плюс добивание |
 | `battleships/simulator.py` | Партия двух стратегий и стрельба по одной расстановке |
 | `battleships/simulate.py` | Запуск сравнения из командной строки |
@@ -91,8 +97,12 @@ strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
 ```
 .venv/bin/python -m battleships.simulate --a probability --b baseline --games 1000
 .venv/bin/python -m battleships.simulate --modifier HUNGER_GAMES
-.venv/bin/python -m unittest discover -s tests
+.venv/bin/python -m unittest discover
+.venv/bin/python -m battleships --strategy battleships.strategies.contract:ProbabilityBot
 ```
+
+Последняя команда запускает бота на платформе; токен берётся из `BATTLESHIPS_TOKEN` в `.env`,
+по умолчанию режим `TRAINING` против `EASY`. Подробности — в `README.md`.
 
 Замеры в симуляторе (1000 партий на классике, 500 на модификатор, случайные расстановки):
 
@@ -123,8 +133,8 @@ strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
 
 ## Следующие шаги
 
-1. Обёртка над WebSocket и прогон против встроенного бота `EASY` в режиме `TRAINING`.
-   Согласовать с Музробом, кто её пишет, и показать ему контракт `Strategy`.
+1. Первый прогон на платформе: `TRAINING` против `EASY` со стратегией `ProbabilityBot`,
+   проверить по логам, что партия доигрывается и запасной ход не срабатывает.
 2. Расстановка: сравнить в симуляторе случайную с прижатой к краям (крупные корабли у
    бортов, одиночные в свободной зоне) против нашей же стрельбы.
 3. Стрельба: заменить подсчёт положений по одному кораблю на выборку целых флотов,
@@ -133,7 +143,6 @@ strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
 
 ## Открытые вопросы
 
-- Кто пишет обёртку и на чём: в этом репозитории или у Музроба отдельно.
 - Заводить ли второго бота для экспериментов, чтобы не рисковать рейтингом основного.
 - Какие бонусы брать, когда организатор их включит.
 
@@ -162,3 +171,5 @@ strategy.on_opponent_shot(cell, result)               # OPPONENT_SHOT
   правил; созданы `DOCUMENTS/HANDOFF.md`, `DOCUMENTS/rules.md`, `DOCUMENTS/protocol-reference.md`.
 - **2026-10-10 12:50** — написаны ядро стратегии (`probability`, `baseline`), симулятор и
   тесты; в симуляторе `probability` топит флот в среднем за 55 выстрелов против 88 у эталона.
+- **2026-10-10 13:05** — стратегия подключена к оболочке Музроба (PR №1) адаптером
+  `ProbabilityBot`, ветка `boris/probability-strategy`.

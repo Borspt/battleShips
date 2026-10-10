@@ -1,4 +1,4 @@
-"""Запуск: python -m unittest discover -s tests"""
+"""Запуск: python -m unittest discover"""
 
 import random
 import unittest

@@ -43,6 +43,8 @@ class ProbabilityStrategy(Strategy):
         bit = 1 << index
         if result == "DEFENDED":
             self.known_ship |= bit
+            if self.rules.no_touching:
+                self.empty |= self.diagonal[index] & ~(self.hits | self.sunk)
             return
         self.known_ship &= ~bit
         if result in ("HIT", "SUNK"):
