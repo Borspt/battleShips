@@ -65,6 +65,8 @@ class ScoutingTest(unittest.TestCase):
         hard = profiles["builtin:HARD"]
         self.assertEqual((hard["wins"], hard["losses"], hard["longShipsOnBorder"]), (1, 1, 0.0))
         self.assertEqual(hard["vsUs"], {"matches": 2, "wins": 1, "losses": 1, "draws": 0})
+        self.assertEqual((hard["vsBots"]["matches"], hard["vsBots"]["openingOnBorder"]), (2, 0.0))
+        self.assertEqual((profiles["bot:bot-a"]["vsBots"]["matches"], profiles["bot:bot-a"]["vsBots"]["openingOnBorder"]), (0, None))
 
     def test_leaderboard_gives_latest_rating_and_unseen_bots(self):
         snapshot = {"fetchedAt": "2026-10-10T11:00:00+00:00", "bots": [

@@ -52,7 +52,25 @@ def edge_placement(rules: Rules, rng: random.Random) -> list[Ship]:
     raise ValueError("не удалось расставить флот: он не помещается на поле")
 
 
-PLACEMENTS = {"random": random_placement, "edges": edge_placement}
+def interior_placement(rules: Rules, rng: random.Random) -> list[Ship]:
+    """Все корабли — не на крайних строках и столбцах: против стрелка, который начинает с краёв."""
+    border = border_mask(rules.rows, rules.columns)
+    for _ in range(1000):
+        forbidden = 0
+        ships: list[Ship] = []
+        for length in rules.fleet:
+            free = [p for p in placements(rules.rows, rules.columns, length) if not p[0] & forbidden]
+            if not free:
+                break
+            mask, around, cells = rng.choice([p for p in free if not p[0] & border] or free)
+            forbidden |= mask | (around if rules.no_touching else 0)
+            ships.append([to_cell(index, rules.columns) for index in cells])
+        else:
+            return ships
+    raise ValueError("не удалось расставить флот: он не помещается на поле")
+
+
+PLACEMENTS = {"random": random_placement, "edges": edge_placement, "interior": interior_placement}
 
 
 def validate_placement(rules: Rules, ships: list[Ship]) -> str | None:
