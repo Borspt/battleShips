@@ -5,7 +5,11 @@
 
 from __future__ import annotations
 
+import json
 import random
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
 
 from .. import model
 from ..placement import random_placement
@@ -27,6 +31,9 @@ def core_rules(rules: model.Rules) -> Rules:
     )
 
 
+PLAN_LOG = Path("logs/plans.jsonl")  # какой план выбран в каждой партии; читает python -m battleships.scouting --plans
+
+
 class ProbabilityBot:
     """Карта вероятностей. Памяти между вызовами нет: знания каждый раз собираются из state.shots.
 
@@ -46,10 +53,15 @@ class ProbabilityBot:
         return self._place(rules, random_placement)
 
     def place_ships_for_match(self, state: model.GameState) -> list[list[model.Cell]]:
-        return self._place(state.rules, self.plan(state).placement)
+        plan = self.plan(state)
+        self._record(state, plan, placed=True)
+        return self._place(state.rules, plan.placement)
 
     def choose_action(self, state: model.GameState, time_budget_ms: int) -> model.Action:
-        shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=self.plan(state).edge_bias)
+        plan = self.plan(state)
+        if state.ships is None and not state.shots:  # «Спидран»: расстановки нет, партия начинается с выстрела
+            self._record(state, plan, placed=False)
+        shooter = ProbabilityStrategy(core_rules(state.rules), self.rng, edge_bias=plan.edge_bias)
         for cell, result in state.shots:
             shooter.on_shot_result((cell.row, cell.column), result)
         return model.Action.shoot(model.Cell(*shooter.next_shot()))
@@ -57,3 +69,23 @@ class ProbabilityBot:
     def _place(self, rules: model.Rules, placement) -> list[list[model.Cell]]:
         ships = placement(core_rules(rules), self.rng)
         return [[model.Cell(row, column) for row, column in ship] for ship in ships]
+
+    def _record(self, state: model.GameState, plan: Plan, placed: bool) -> None:
+        """Строка о выбранном плане. Сбой записи не должен стоить хода."""
+        opponent = state.opponent_info
+        record = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "strategy": type(self).__name__,
+            "opponent": opponent.key,
+            "opponentRating": opponent.rating,
+            "modifier": state.rules.modifier,
+            "placement": plan.placement.__name__ if placed else None,
+            "edgeBias": asdict(plan.edge_bias) if plan.edge_bias else None,
+            "reason": plan.reason,
+        }
+        try:
+            PLAN_LOG.parent.mkdir(parents=True, exist_ok=True)
+            with PLAN_LOG.open("a", encoding="utf-8") as log:
+                log.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
