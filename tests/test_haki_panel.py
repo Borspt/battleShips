@@ -12,6 +12,23 @@ from battleships.haki_supervisor import bot_command, journal_summary, supervise,
 
 
 class HakiPanelTests(unittest.TestCase):
+    def test_windows_reader_lock_does_not_abort_snapshot_update(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'state.json'
+            write_json(target, {'status': 'starting'})
+            real_replace = Path.replace
+            attempts = []
+            def locked_once(source, destination):
+                attempts.append(1)
+                if len(attempts) == 1:
+                    self.assertEqual(read_json(target)['status'], 'starting')
+                    raise PermissionError('reader holds destination')
+                return real_replace(source, destination)
+            with patch.object(Path, 'replace', locked_once):
+                write_json(target, {'status': 'running'})
+            self.assertEqual(read_json(target)['status'], 'running')
+            self.assertEqual(len(attempts), 2)
+
     def test_http_requires_host_origin_and_nonce(self):
         manager = Mock()
         manager.status.return_value = {'series': {}}
