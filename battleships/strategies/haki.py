@@ -6,12 +6,42 @@ import math
 import time
 
 from .. import model
+from ..placement import edge_placement, interior_placement, random_placement
+from .adaptation import Plan, choose_plan, MIN_MATCHES
 from .contract import ProbabilityBot, core_rules
 from .probability import ProbabilityStrategy
 
 
 class _SearchLimit(Exception):
     pass
+
+
+def choose_haki_plan(modifier, opponent, profile) -> Plan:
+    """Only Haki: defend against team-bot openings, never mixed training statistics.
+
+    Keep the shared attack plan, but choose defence from the matching opponent
+    population. Sparse/unknown team evidence means random placement. A real zero
+    border share is evidence, not a missing value.
+    """
+    base = choose_plan(modifier, opponent, profile)
+    if getattr(opponent, "built_in_bot", None):
+        return base
+    versus = (profile or {}).get("vsBots") or {}
+    share = versus.get("openingOnBorder")
+    placement = random_placement
+    reason = "Хаки: мало данных о дебюте против команд; случайная расстановка"
+    if (versus.get("matches", 0) >= MIN_MATCHES
+            and isinstance(share, (int, float)) and 0 <= share <= 1
+            and versus.get("openingShots", 0) >= 15 * MIN_MATCHES):
+        if share <= 0.25:
+            placement = edge_placement
+            reason = f"Хаки: против команд {share:.0%} дебютных выстрелов у края; флот к краям"
+        elif share >= 0.85:
+            placement = interior_placement
+            reason = f"Хаки: против команд {share:.0%} дебютных выстрелов у края; флот внутри"
+        else:
+            reason = f"Хаки: смешанный дебют против команд ({share:.0%} у края); случайный флот"
+    return Plan(placement, base.edge_bias, reason + "; базовая оценка: " + base.reason)
 
 
 class HakiEndgameStrategy(ProbabilityStrategy):
@@ -72,7 +102,11 @@ class HakiEndgameStrategy(ProbabilityStrategy):
 
 
 class HakiObservationBot(ProbabilityBot):
-    """Расстановка/разведка Бориса + отдельная концовка Музроба; бонусы не применяет."""
+    """Отдельная защита по рейтинговым дебютам + концовка; бонусы не применяет."""
+
+    def plan(self, state: model.GameState) -> Plan:
+        return choose_haki_plan(state.rules.modifier, state.opponent_info,
+                                self.book.lookup(state.opponent_info))
 
     def choose_action(self, state: model.GameState, time_budget_ms: int) -> model.Action:
         started = time.monotonic()
