@@ -236,6 +236,9 @@ class HakiObservationBot(ProbabilityBot):
             placement_distances(10, 10, length)
 
     def _distance_budget(self, state, used):
+        # A query consumes a shot; conserve the short hit-count scoring horizon.
+        if state.rules.modifier == 'HUNGER_GAMES' or state.rules.shot_limit_per_player <= 20:
+            return 0
         if state.shots_left <= 1 or used >= 2:
             return 0
         if state.ships and state.rules.modifier != "BIRD_BOX":

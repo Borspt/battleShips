@@ -74,12 +74,17 @@ def journal_summary(directory):
                 if kind in {'MATCH_STARTED', 'MATCH_SNAPSHOT'}:
                     opponent = data.get('opponent') or {}
                     summary.update(active=True, modifier=(data.get('rules') or {}).get('modifier'),
+                        shotLimit=(data.get('rules') or {}).get('shotLimitPerPlayer'),
                         opponent={'bot_id': opponent.get('botId'), 'name': opponent.get('botName')})
                 summary['timeouts'] += kind == 'TURN_TIMED_OUT'
                 summary['rejections'] += kind in {'SHOT_REJECTED', 'BONUS_REJECTED', 'COMMAND_REJECTED'}
                 summary['bonuses'] += kind == 'BONUS_RESOLVED'
             if event == 'haki_action_timing':
                 summary['lastActionMs'] = data.get('request_to_send_ms')
+            if event == 'haki_rating_checkpoint':
+                summary.update({k: data[k] for k in ('ratingBefore', 'ratingCurrent', 'ratingGain',
+                    'ratingMatchCount', 'completed', 'warmupMatches', 'ratingDecision')})
+                summary['ratingCheckedAt'] = row.get('at')
             if event == 'haki_turn_deferred':
                 summary['resyncEvents'] += 1
             if event in {'match_context', 'opponent_context'}:
@@ -105,14 +110,15 @@ def journal_summary(directory):
 def bot_command(repo, logs):
     return [sys.executable, '-u', '-m', 'battleships', '--env-file', str(repo / '.env.muzrob'),
             '--token-env', 'BATTLESHIPS_TOKEN_MUZROB', '--strategy', HAKI_STRATEGY,
-            '--mode', 'RANKING', '--log-dir', str(logs), '--stop-on-loss', '--allow-bonuses']
+            '--mode', 'RANKING', '--log-dir', str(logs), '--allow-bonuses']
 
 
 def supervise(repo, series):
     repo, series = Path(repo).resolve(), Path(series).resolve()
     state_path = series / 'state.json'
     state = read_json(state_path)
-    state.update(supervisorPid=os.getpid(), status='starting', lossLimit=2, mode='RANKING')
+    state.update(supervisorPid=os.getpid(), status='starting', lossLimit=None,
+                 stopPolicy='RATING_GAIN', warmupMatches=3, mode='RANKING')
     write_json(state_path, state)
     child = None
     try:
@@ -122,7 +128,8 @@ def supervise(repo, series):
         if haki_processes():
             raise RuntimeError('Another Haki process is running')
         env = os.environ.copy()
-        env.update(HAKI_LOSS_LIMIT='2', HAKI_STOP_FILE=str(series / 'stop.request'))
+        env.update(HAKI_STOP_POLICY='RATING_GAIN', HAKI_RATING_WARMUP='3',
+                   HAKI_STOP_FILE=str(series / 'stop.request'))
         with (series / 'client.log').open('ab') as output:
             child = subprocess.Popen(bot_command(repo, series / 'logs'), cwd=repo, env=env,
                                      stdout=output, stderr=output, stdin=subprocess.DEVNULL,
@@ -133,7 +140,7 @@ def supervise(repo, series):
                 'pid': child.pid, 'supervisorPid': os.getpid(),
                 'commit': state.get('commit'), 'workingDirectory': str(repo),
                 'startedAt': state['startedAt'], 'startingMode': 'RANKING',
-                'lossLimit': 2, 'lossCountMode': 'TOTAL', 'status': 'running',
+                'lossLimit': None, 'stopPolicy': 'RATING_GAIN', 'warmupMatches': 3, 'status': 'running',
                 'logDirectory': str(series / 'logs'), 'panelSeries': str(series)})
             while child.poll() is None:
                 state.update(journal_summary(series / 'logs'))
