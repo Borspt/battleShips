@@ -3,6 +3,7 @@
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from battleships.model import OpponentInfo
@@ -83,6 +84,10 @@ class ChoosePlanTest(unittest.TestCase):
         corner = {f"{row},{column}": 0.9 for row in range(3) for column in range(3)}
         recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.6, "singlesOnBorderShare": 0.4,
                   "fleetCells": corner, "fleetSpread": 0.2, "fleetLift": 1.6}
+        self.assertIsNone(choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent)).cell_prior)  # выключена по умолчанию
+        patcher = mock.patch("battleships.strategies.adaptation.FLEET_MAP_ENABLED", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         plan = choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent))
         self.assertEqual(len(plan.cell_prior), 100)
         self.assertIsNone(plan.edge_bias)
@@ -95,6 +100,18 @@ class ChoosePlanTest(unittest.TestCase):
                       dict(recent, fleetLift=None)):
             self.assertIsNone(choose_plan("HUNGER_GAMES", REMOTE, profile(recent=other)).cell_prior)
         self.assertIsNone(choose_plan("DUEL", REMOTE, profile(recent=recent)).cell_prior)
+
+    def test_hunger_games_placement_turns_random_against_a_bot_that_learned_us(self):
+        cells = {f"{row},{column}": 0.9 for row in range(10) for column in range(5)}
+        recent = {"matches": 25, "placements": 25, "longShipsOnBorder": 0.3, "singlesOnBorderShare": 0.4,
+                  "earlyCells": cells, "earlyHits": 6.5}
+        with_us = dict(recent, matches=8, placements=8)
+        learned = choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent, recentVsUs=dict(with_us, earlyHits=8.2)))
+        self.assertEqual(learned.placement, random_placement)
+        self.assertIn("случайная", learned.reason)
+        for hits in (6.9, 5.0, None):  # попадает как по всем или реже — продолжаем прятаться
+            plan = choose_plan("HUNGER_GAMES", REMOTE, profile(recent=recent, recentVsUs=dict(with_us, earlyHits=hits)))
+            self.assertEqual(plan.placement.__name__, "evasive_placement")
 
     def test_recent_games_override_whole_day_and_games_with_us_override_both(self):
         day = versus_bots(longShipsOnBorder=0.31)

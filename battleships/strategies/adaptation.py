@@ -30,6 +30,11 @@ MIN_FLEET_PLACEMENTS = 20
 # Карта годится, только если она предсказывала последние расстановки бота. Боты, которые видят наши выстрелы
 # в реплеях, уходят с прежних мест: против «Забудь весь контекст» карта давала 0–5 попаданий, 1 победа из 9.
 FLEET_LIFT = 1.15
+# На живых партиях карта не помогла: 48% очков с ней против 55% без неё (118 партий), попаданий поровну.
+# Соперники меняют расстановку быстрее, чем обновляются профили. Выключена до нового замера.
+FLEET_MAP_ENABLED = False
+# Бот попадает по нам заметно чаще, чем по остальным, — значит, выучил, где мы прячемся: ставим флот случайно.
+LEARNED_US_MARGIN = 0.5
 FLEET_SMOOTHING = 0.1
 
 
@@ -115,13 +120,19 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_ea
                 early, origin = candidate["earlyCells"], label
                 break
         recent = (profile or {}).get("recent") or {}
-        if (recent.get("placements", 0) >= MIN_FLEET_PLACEMENTS and (recent.get("fleetSpread") or 0.0) >= FLEET_SPREAD
+        if (FLEET_MAP_ENABLED and recent.get("placements", 0) >= MIN_FLEET_PLACEMENTS and (recent.get("fleetSpread") or 0.0) >= FLEET_SPREAD
                 and (recent.get("fleetLift") or 0.0) >= FLEET_LIFT):
             occupied = recent.get("fleetCells") or {}
             cell_prior = tuple((occupied.get(f"{row},{column}", 0.0) + FLEET_SMOOTHING) / (0.2 + FLEET_SMOOTHING)
                                for row in range(10) for column in range(10))
             bias = None  # карта клеток точнее поправки на края и заменяет её
             reasons.append(f"стрельба по карте его расстановок (разброс {recent['fleetSpread']:.3f})")
+        with_us = (profile or {}).get("recentVsUs") or {}
+        hits_us, hits_all = with_us.get("earlyHits"), recent.get("earlyHits")
+        if (with_us.get("matches", 0) >= MIN_RECENT_VS_US and hits_us is not None and hits_all is not None
+                and hits_us > hits_all + LEARNED_US_MARGIN):
+            early = None
+            reasons.append(f"расстановка случайная: по нам он попадает {hits_us:.1f} раза, по остальным {hits_all:.1f}")
         if early:
             danger = {tuple(int(part) for part in cell.split(",")): share for cell, share in early.items()}
             placement = partial(evasive_placement, danger=danger)
