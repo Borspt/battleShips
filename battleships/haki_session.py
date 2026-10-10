@@ -1,5 +1,6 @@
 """Ограничения запуска только личного бота Музроба."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import os
 
 HAKI_STRATEGY = "battleships.strategies.haki:HakiObservationBot"
 
@@ -15,6 +16,12 @@ class HakiSession:
     training_wins: int = 0
     training_match: bool = False
     change_requested: bool = False
+    loss_limit: int = field(default_factory=lambda: int(os.environ.get('HAKI_LOSS_LIMIT', '1')))
+    losses: int = 0
+
+    def __post_init__(self):
+        if not 1 <= self.loss_limit <= 10:
+            raise ValueError('HAKI_LOSS_LIMIT must be between 1 and 10')
 
     def connected(self):
         # При переподключении платформа снова начинает в RANKING.
@@ -50,7 +57,12 @@ class HakiSession:
             was_active = self.active
             self.active = False
             if message.get("outcome") == "LOSS":
-                self.stop_reason = "FIRST_LOSS"
+                if was_active:
+                    self.losses += 1
+                if self.losses >= self.loss_limit:
+                    self.stop_reason = "FIRST_LOSS" if self.loss_limit == 1 else "LOSS_LIMIT"
+                elif not self.confirmed:
+                    self.stop_reason = self.stop_reason or "MODE_NOT_CONFIRMED"
             elif message.get("outcome") not in {"WIN", "DRAW"}:
                 self.stop_reason = "UNKNOWN_OUTCOME"
             elif not self.confirmed:

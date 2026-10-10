@@ -339,10 +339,14 @@ async def run_bot(*, url: str, token: str, strategy: str, mode: str, opponent: s
                         if message.get("type") == "MATCH_FINISHED":
                             completed += 1
                             delay = 0.5
-                            if stop_on_loss and message.get("outcome") == "LOSS":
-                                journal.write("stop_on_loss", {"completed": completed,
-                                              "end_reason": message.get("endReason")})
-                                LOG.info("First loss received; stopping without reconnect")
+                            if (stop_on_loss and message.get("outcome") == "LOSS"
+                                    and (session is None or session.should_stop)):
+                                details = {"completed": completed, "end_reason": message.get("endReason")}
+                                if session:
+                                    details.update(losses=session.losses, loss_limit=session.loss_limit)
+                                journal.write("stop_on_loss", details)
+                                LOG.info("Haki loss limit reached; stopping without reconnect" if session
+                                         else "First loss received; stopping without reconnect")
                                 return
                             if stop_after and completed >= stop_after:
                                 return
