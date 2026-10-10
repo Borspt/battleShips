@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Callable
 
-from ..placement import edge_placement, interior_placement, random_placement
+from ..placement import edge_placement, evasive_placement, interior_placement, random_placement
 from ..scouting import PROFILES, profile_for
 from .probability import HARD_BIAS, EdgeBias
 
@@ -31,7 +32,7 @@ class Plan:
     reason: str
 
 
-def choose_plan(modifier: str | None, opponent, profile: dict | None) -> Plan:
+def choose_plan(modifier: str | None, opponent, profile: dict | None, typical_early: dict | None = None) -> Plan:
     """opponent — state.opponent_info оболочки; profile — профиль из разведки или None.
 
     Мы для соперника — бот команды, поэтому смотрим, как он играет против ботов команд
@@ -94,6 +95,22 @@ def choose_plan(modifier: str | None, opponent, profile: dict | None) -> Plan:
             placement = edge_placement
             reasons.append("встроенный HARD стреляет от центра")
 
+    # «Голодные игры»: выстрелов мало, флот никто не топит, считаются попадания. Прячем корабли от
+    # первых выстрелов этого соперника, а если его не знаем — от первых выстрелов всех ботов в среднем.
+    if modifier == "HUNGER_GAMES":
+        early, origin = typical_early, "ботов в среднем"
+        for section, minimum, label in (("recentVsUs", MIN_RECENT_VS_US, "соперника в партиях с нами"),
+                                        ("recent", MIN_PLACEMENTS, "соперника в последних партиях")):
+            candidate = (profile or {}).get(section) or {}
+            if candidate.get("matches", 0) >= minimum and candidate.get("earlyCells"):
+                early, origin = candidate["earlyCells"], label
+                break
+        if early:
+            danger = {tuple(int(part) for part in cell.split(",")): share for cell, share in early.items()}
+            placement = partial(evasive_placement, danger=danger)
+            placement.__name__ = "evasive_placement"
+            reasons.append(f"флот спрятан от первых выстрелов {origin}")
+
     return Plan(placement, bias, "; ".join(reasons) or "нейтрально: привычек у соперника не видно")
 
 
@@ -104,11 +121,27 @@ class ProfileBook:
         self.path = path
         self.loaded_at = None
         self.profiles: dict[str, dict] = {}
+        self._typical, self._typical_for = None, object()
 
     def rating_of(self, bot_name: str) -> float | None:
         """Последний известный рейтинг бота по имени — так стратегия узнаёт собственный рейтинг."""
         self.lookup(None)
         return next((p.get("rating") for p in self.profiles.values() if p.get("botName") == bot_name), None)
+
+    def typical_early(self) -> dict | None:
+        """Куда боты команд в среднем бьют первыми выстрелами — для соперника, которого мы не знаем."""
+        self.lookup(None)
+        if self._typical_for != self.loaded_at:
+            totals, bots = {}, 0
+            for profile in self.profiles.values():
+                early = (profile.get("recent") or {}).get("earlyCells")
+                if profile.get("kind") == "REMOTE_BOT" and early:
+                    bots += 1
+                    for cell, share in early.items():
+                        totals[cell] = totals.get(cell, 0.0) + share
+            self._typical = {cell: total / bots for cell, total in totals.items()} if bots else None
+            self._typical_for = self.loaded_at
+        return self._typical
 
     def lookup(self, opponent) -> dict | None:
         try:

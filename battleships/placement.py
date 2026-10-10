@@ -70,6 +70,29 @@ def interior_placement(rules: Rules, rng: random.Random) -> list[Ship]:
     raise ValueError("не удалось расставить флот: он не помещается на поле")
 
 
+def evasive_placement(rules: Rules, rng: random.Random, danger: dict[Cell, float],
+                      candidates: int = 240, keep: int = 24) -> list[Ship]:
+    """Расстановка подальше от клеток, куда соперник бьёт первыми выстрелами; для партий с коротким лимитом.
+
+    danger — доля партий, в которых клетка попадала в первые выстрелы соперника. Цена расстановки —
+    ожидаемые потери: найденный корабль добивают целиком, поэтому длина умножается на шанс, что его
+    заденут. Берём случайную из лучших, чтобы расстановку нельзя было выучить.
+    """
+    def cost(ships: list[Ship]) -> float:
+        total = 0.0
+        for ship in ships:
+            missed = 1.0
+            for cell in ship:
+                missed *= 1.0 - min(0.95, danger.get(cell, 0.0))
+            total += len(ship) * (1.0 - missed)
+        return total
+
+    makers = (random_placement, random_placement, edge_placement, interior_placement)
+    pool = [makers[number % len(makers)](rules, rng) for number in range(candidates)]
+    pool.sort(key=cost)
+    return rng.choice(pool[:keep])
+
+
 PLACEMENTS = {"random": random_placement, "edges": edge_placement, "interior": interior_placement}
 
 

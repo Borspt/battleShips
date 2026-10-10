@@ -142,6 +142,9 @@ class ProbabilityBotTest(unittest.TestCase):
         self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=4), 150).type, "SHOOT")
         self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=13), 150).type, "SHOOT")  # 18 против 13
         self.assertEqual(bot.choose_action(self.endgame_state(opponent_hits=14), 150).type, "USE_BONUS")
+        hunger = self.endgame_state()
+        hunger.rules = state_for("HUNGER_GAMES").rules  # запрос стоит выстрела, а их всего двадцать
+        self.assertEqual(bot.choose_action(hunger, 150).type, "SHOOT")
         last_shot = self.endgame_state()
         last_shot.shots_left = 1
         self.assertEqual(bot.choose_action(last_shot, 150).type, "SHOOT")
